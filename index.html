@@ -1430,6 +1430,7 @@ function addCategory() {
   const name = document.getElementById('newCatName').value.trim();
   if (!name) return;
   if (name.toLowerCase() === 'combo') { showAlert('"Combo" is built-in — no need to add it.', 'warn'); return; }
+  if (name.toLowerCase() === 'discontinued') { showAlert('"Discontinued" is built-in — no need to add it.', 'warn'); return; }
   if (S.config.categories.includes(name)) { showAlert('Category already exists.', 'warn'); return; }
   S.config.categories.push(name);
   saveConfig();
@@ -1453,7 +1454,8 @@ function deleteCategory(name) {
 function renderCategoryChips() {
   const div = document.getElementById('categoryChips');
   if (!div) return;
-  let html = '<span class="chip" style="background:#e8f0ee;color:var(--teal);border-color:var(--teal)">Combo (built-in)</span>';
+  let html = '<span class="chip" style="background:#e8f0ee;color:var(--teal);border-color:var(--teal)">Combo (built-in)</span>'
+           + '<span class="chip" style="background:#f3f4f6;color:#4b5563;border-color:#9ca3af">Discontinued (built-in)</span>';
   for (const cat of S.config.categories) {
     html += `<span class="chip removable" onclick="deleteCategory('${cat.replace(/'/g,"\\'")}'); event.stopPropagation()" title="Click to delete">${cat} ✕</span>`;
   }
@@ -1472,7 +1474,7 @@ function refreshCategoryDropdowns() {
   const pnlSel = document.getElementById('pnlCatFilter');
   if (pnlSel) {
     const cur2 = pnlSel.value;
-    const allCats = ['Combo', ...S.config.categories];
+    const allCats = ['Combo', 'Discontinued', ...S.config.categories];
     pnlSel.innerHTML = '<option value="">All Categories</option>' + allCats.map(c => `<option value="${c}">${c}</option>`).join('');
     if (cur2) pnlSel.value = cur2;
   }
@@ -1551,9 +1553,17 @@ function buildUnmappedCard(skus, prefix) {
         <datalist id="prodList_${sid}">${productOpts}</datalist>
       </td>
       <td>
-        <select id="mapCat_${sid}" style="height:32px;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px" ${isCombo ? 'disabled' : ''}>
+        <select id="mapCat_${sid}" style="height:32px;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px" ${isCombo ? 'disabled' : ''}
+          onchange="
+            const catVal=this.value;
+            const prodEl=document.getElementById('mapProd_${sid}');
+            if(catVal==='Discontinued'&&prodEl&&!prodEl.value.trim()){
+              prodEl.value='Discontinued: ${sku.replace(/'/g,"\\'").replace(/\\/g,'\\\\').replace(/"/g,'&quot;')}';
+            }
+          ">
           <option value="">— Category —</option>
           <option value="Combo">Combo</option>
+          <option value="Discontinued">Discontinued</option>
           ${S.config.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
         </select>
       </td>
@@ -1821,7 +1831,7 @@ function renderCogsTab() {
   const catSel = document.getElementById('cogsCatFilter');
   if (catSel) {
     const cur = catSel.value;
-    const allCats = ['Combo', ...S.config.categories];
+    const allCats = ['Combo', 'Discontinued', ...S.config.categories];
     catSel.innerHTML = '<option value="">All Categories</option>' +
       allCats.map(c => `<option value="${c}">${c}</option>`).join('');
     catSel.value = cur;
@@ -1830,6 +1840,7 @@ function renderCogsTab() {
   // Apply filters
   const products = allProducts.filter(p => {
     const cat = (S.config.productCategory[p] || '').toLowerCase();
+    if (cat === 'discontinued' && !catFilter) return false; // hide from default view
     const matchCat = !catFilter || cat === catFilter;
     const matchSearch = !search || p.toLowerCase().includes(search);
     return matchCat && matchSearch;
@@ -2352,9 +2363,12 @@ function renderProductTable(data, grossSales, viewMode, my, catFilter) {
 
   const pRow = (p, isSub=false) => {
     const hasFlag = (p.flaggedUnits||0) > 0;
-    return `<tr${hasFlag?' class="flagged"':''} style="${isSub?'background:#fafaf5':''}"}>
-      <td style="${isSub?'padding-left:24px':''}">${p.name}${hasFlag?` <span class="badge warn">⚠ partial</span>`:''}</td>
-      <td><span class="badge ${p.category==='Combo'?'blue':p.category==='Uncategorized'?'grey':'green'}">${p.category}</span></td>
+    const isDisc = p.category === 'Discontinued';
+    const rowStyle = isDisc ? 'opacity:0.55;background:#f9f9f7' : (isSub ? 'background:#fafaf5' : '');
+    const nameStyle = isDisc ? 'text-decoration:line-through;color:var(--muted)' : (isSub ? 'padding-left:24px' : '');
+    return `<tr${hasFlag?' class="flagged"':''} style="${rowStyle}"}>
+      <td style="${nameStyle}">${p.name}${hasFlag?` <span class="badge warn">⚠ partial</span>`:''}${isDisc?' <span class="badge grey" style="font-size:10px">discontinued</span>':''}</td>
+      <td><span class="badge ${p.category==='Combo'?'blue':p.category==='Discontinued'?'grey':p.category==='Uncategorized'?'grey':'green'}">${p.category}</span></td>
       <td class="r">${fmt1(p.units)}</td>
       <td class="r">₹${fmt(p.productSales)}</td>
       <td class="r">₹${fmt(p.asp||0)}</td>
