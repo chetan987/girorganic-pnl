@@ -1445,6 +1445,22 @@ function deleteSkuMap(sku) {
   updateUnmappedSkus();
 }
 
+function pnlQuickMap(sku, safeId) {
+  const prodEl = document.getElementById('pnlMapProd_' + safeId);
+  const catEl  = document.getElementById('pnlMapCat_'  + safeId);
+  const prod = prodEl ? prodEl.value.trim() : '';
+  const cat  = catEl  ? catEl.value.trim()  : '';
+  if (!prod) { showAlert('Enter a product name for SKU: ' + sku, 'warn'); return; }
+  S.config.skuMap[sku] = prod;
+  if (cat) S.config.productCategory[prod] = cat;
+  saveConfig();
+  renderSkuMapTable();
+  updateUnmappedSkus();
+  showAlert(`Mapped "${sku}" → "${prod}". Click Calculate P&L to refresh.`, 'success');
+  buildPnL();
+  renderPnLTab();
+}
+
 function updateSkuCategory(sku, cat) {
   const prod = S.config.skuMap[sku];
   if (prod) { S.config.productCategory[prod] = cat; saveConfig(); }
@@ -2069,9 +2085,39 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
     const mappedNames = new Set(Object.values(S.config.skuMap));
     return !mappedNames.has(name) && !getAllProducts().includes(name);
   });
-  const unmappedBanner = unmappedSkus.length
-    ? `<div class="alert warn" style="margin-bottom:12px">⚠ <strong>${unmappedSkus.length} unmapped SKU(s)</strong> found in this month's data — COGS will be ₹0 for these. Go to <strong>SKU Mapping tab</strong> to map them: ${unmappedSkus.map(s=>`<code>${s}</code>`).join(', ')}</div>`
-    : '';
+  let unmappedBanner = '';
+  if (unmappedSkus.length) {
+    const knownProducts = getAllProducts();
+    const productOpts = knownProducts.map(p => `<option value="${p.replace(/"/g,'&quot;')}">${p}</option>`).join('');
+    const rows = unmappedSkus.map(sku => `
+      <tr>
+        <td><code style="font-size:12px;background:#fef3c7;padding:2px 6px;border-radius:4px">${sku}</code></td>
+        <td>
+          <input list="pnlProductList_${sku.replace(/[^a-z0-9]/gi,'_')}" id="pnlMapProd_${sku.replace(/[^a-z0-9]/gi,'_')}"
+            class="auth-inp" style="height:32px;font-size:12px;margin:0;padding:4px 8px;width:260px"
+            placeholder="Type or select product name…">
+          <datalist id="pnlProductList_${sku.replace(/[^a-z0-9]/gi,'_')}">${productOpts}</datalist>
+        </td>
+        <td>
+          <select id="pnlMapCat_${sku.replace(/[^a-z0-9]/gi,'_')}" style="height:32px;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">
+            <option value="">— Category —</option>
+            ${S.config.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <button class="btn small" onclick="pnlQuickMap('${sku.replace(/'/g,"\\'")}','${sku.replace(/[^a-z0-9]/gi,'_')}')">Map</button>
+        </td>
+      </tr>`).join('');
+    unmappedBanner = `
+      <div class="card" style="border-color:#f59e0b;margin-bottom:14px">
+        <h2 style="color:#92400e">⚠ ${unmappedSkus.length} Unmapped SKU(s) — COGS is ₹0 for these</h2>
+        <p style="font-size:12px;color:#78350f;margin-bottom:10px">Map each SKU to a product name below, then click <strong>Calculate P&amp;L</strong> again to apply COGS.</p>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>SKU</th><th>Map to Product</th><th>Category</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
+  }
 
   let html = unmappedBanner + `<div class="stat-cards">
     <div class="stat"><div class="label">Gross Sales</div><div class="value">₹${fmtK(t.grossSales)}</div><div class="sub">${Math.round(t.units)} units</div></div>
