@@ -252,6 +252,10 @@ input[type=number] { width: 110px; }
       <input type="tel" maxlength="1" class="otp-digit" oninput="otpNav(this,5)">
     </div>
     <div id="otpErr" class="auth-err"></div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6b7a7a;cursor:pointer;margin:6px 0 10px;justify-content:center">
+      <input type="checkbox" id="rememberBrowser" style="width:16px;height:16px;cursor:pointer">
+      Remember this browser
+    </label>
     <button class="auth-btn" onclick="doTOTP()">Verify</button>
     <button class="auth-btn sec" onclick="showPhase('p1')">← Back</button>
   </div>
@@ -504,7 +508,8 @@ async function doPassword() {
   if(hash === localStorage.getItem('pnl_pwd_hash')) {
     clearFails();
     const has2FA = !!localStorage.getItem('pnl_totp_secret');
-    if(has2FA) { _pwdVerified=true; showPhase('p2'); clearOTP('otp'); }
+    const browserRemembered = localStorage.getItem('pnl_2fa_remembered') === '1';
+    if(has2FA && !browserRemembered) { _pwdVerified=true; showPhase('p2'); clearOTP('otp'); }
     else { sessionStorage.setItem('pnl_authed','1'); document.getElementById('authOverlay').remove(); }
   } else {
     recordFail();
@@ -520,8 +525,13 @@ async function doTOTP() {
   if(code.length<6) { document.getElementById('otpErr').textContent='Enter all 6 digits.'; return; }
   const secret = localStorage.getItem('pnl_totp_secret');
   const ok = await verifyTOTP(secret, code);
-  if(ok) { sessionStorage.setItem('pnl_authed','1'); document.getElementById('authOverlay').remove(); }
-  else { document.getElementById('otpErr').textContent='Wrong code. Try again.'; clearOTP('otp'); recordFail(); }
+  if(ok) {
+    if(document.getElementById('rememberBrowser')?.checked) {
+      localStorage.setItem('pnl_2fa_remembered','1');
+    }
+    sessionStorage.setItem('pnl_authed','1');
+    document.getElementById('authOverlay').remove();
+  } else { document.getElementById('otpErr').textContent='Wrong code. Try again.'; clearOTP('otp'); recordFail(); }
 }
 
 async function doForgotVerify() {
