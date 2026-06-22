@@ -238,6 +238,9 @@ input[type=number] { width: 110px; }
     <div id="tfa2" style="display:none">
       <p>Scan this QR code with <strong>Google Authenticator</strong></p>
       <img id="qrImg" style="margin:10px auto;display:block;border-radius:8px;width:200px;height:200px;background:#eee" alt="QR Code">
+      <div id="qrFallback" style="display:none;background:#fef3e8;border-radius:8px;padding:10px;font-size:12px;color:#7e5109;margin:8px 0">
+        ⚠ QR image failed to load. Use manual entry below — open Google Authenticator → + → <strong>Enter a setup key</strong> → paste the key shown.
+      </div>
       <p style="font-size:11px;color:#6b7a7a;margin:8px 0">Or enter this key manually:</p>
       <code id="totpSecretDisplay" style="background:#f0f0e8;padding:4px 8px;border-radius:4px;font-size:12px;word-break:break-all;display:block;margin-bottom:12px"></code>
       <p style="font-size:13px;margin-bottom:8px">Enter the 6-digit code from the app to confirm:</p>
@@ -436,10 +439,14 @@ async function tfaStep1() {
     _pendingSecret = genSecret();
     document.getElementById('totpSecretDisplay').textContent = _pendingSecret;
 
-    // QR code via Google Charts API — no library needed
+    // QR code — try multiple APIs
     const uri = `otpauth://totp/Analytics?secret=${_pendingSecret}&issuer=Analytics&digits=6&period=30`;
-    const qrUrl = `https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=${encodeURIComponent(uri)}`;
-    document.getElementById('qrImg').src = qrUrl;
+    const imgEl = document.getElementById('qrImg');
+    imgEl.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&ecc=M&data=${encodeURIComponent(uri)}`;
+    imgEl.onerror = () => {
+      imgEl.style.display = 'none';
+      document.getElementById('qrFallback').style.display = 'block';
+    };
 
     clearOTP('tfa');
     document.getElementById('tfa2Err').textContent = '';
