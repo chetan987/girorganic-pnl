@@ -267,6 +267,45 @@ input[type=number] { width: 110px; }
   </div>
 </div>
 
+<!-- ── Change Password Modal ── -->
+<div id="changePwdModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
+  <div class="auth-box" style="width:380px">
+    <h2 style="color:#0B3D3D;margin-bottom:14px">🔑 Change Password</h2>
+    <!-- Step 1: current password -->
+    <div id="cpStep1">
+      <p style="font-size:13px;margin-bottom:10px">Enter your current password</p>
+      <input type="password" id="cpCurPwd" class="auth-inp" placeholder="Current password" onkeydown="if(event.key==='Enter')cpVerifyPwd()">
+      <div id="cpStep1Err" class="auth-err"></div>
+      <button class="auth-btn" onclick="cpVerifyPwd()">Continue</button>
+      <button class="auth-btn sec" onclick="closeCPModal()">Cancel</button>
+    </div>
+    <!-- Step 2: 2FA code (shown only if 2FA enabled) -->
+    <div id="cpStep2" style="display:none">
+      <p style="font-size:13px;margin-bottom:10px">Enter your 2FA code from Google Authenticator</p>
+      <div class="otp-wrap" id="cpOtpBoxes">
+        <input type="tel" maxlength="1" class="cp-digit" oninput="cpOtpNav(this,0)">
+        <input type="tel" maxlength="1" class="cp-digit" oninput="cpOtpNav(this,1)">
+        <input type="tel" maxlength="1" class="cp-digit" oninput="cpOtpNav(this,2)">
+        <input type="tel" maxlength="1" class="cp-digit" oninput="cpOtpNav(this,3)">
+        <input type="tel" maxlength="1" class="cp-digit" oninput="cpOtpNav(this,4)">
+        <input type="tel" maxlength="1" class="cp-digit" oninput="cpOtpNav(this,5)">
+      </div>
+      <div id="cpStep2Err" class="auth-err"></div>
+      <button class="auth-btn" onclick="cpVerify2FA()">Verify</button>
+      <button class="auth-btn sec" onclick="closeCPModal()">Cancel</button>
+    </div>
+    <!-- Step 3: new password -->
+    <div id="cpStep3" style="display:none">
+      <p style="font-size:13px;margin-bottom:10px">Set your new password</p>
+      <input type="password" id="cpNewA" class="auth-inp" placeholder="New password (min 8 chars)">
+      <input type="password" id="cpNewB" class="auth-inp" placeholder="Confirm new password" onkeydown="if(event.key==='Enter')cpSetNew()">
+      <div id="cpStep3Err" class="auth-err"></div>
+      <button class="auth-btn" onclick="cpSetNew()">Save Password</button>
+      <button class="auth-btn sec" onclick="closeCPModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════════
 // CRYPTO HELPERS
@@ -405,8 +444,8 @@ async function doResetPassword() {
 function otpNav(el,i) { el.value=el.value.replace(/\D/,''); if(el.value&&i<5) el.parentElement.querySelectorAll('.otp-digit')[i+1].focus(); if(getOTP('otp').length===6) doTOTP(); }
 function fpOtpNav(el,i) { el.value=el.value.replace(/\D/,''); if(el.value&&i<5) el.parentElement.querySelectorAll('.fp-digit')[i+1].focus(); if(getOTP('fp').length===6) doForgotVerify(); }
 function tfaOtpNav(el,i) { el.value=el.value.replace(/\D/,''); if(el.value&&i<5) el.parentElement.querySelectorAll('.tfa-digit')[i+1].focus(); }
-function getOTP(type) { const cls=type==='otp'?'.otp-digit':type==='fp'?'.fp-digit':'.tfa-digit'; return [...document.querySelectorAll(cls)].map(e=>e.value).join(''); }
-function clearOTP(type) { const cls=type==='otp'?'.otp-digit':type==='fp'?'.fp-digit':'.tfa-digit'; document.querySelectorAll(cls).forEach(e=>e.value=''); document.querySelector(cls)?.focus(); }
+function getOTP(type) { const cls=type==='otp'?'.otp-digit':type==='fp'?'.fp-digit':type==='cp'?'.cp-digit':'.tfa-digit'; return [...document.querySelectorAll(cls)].map(e=>e.value).join(''); }
+function clearOTP(type) { const cls=type==='otp'?'.otp-digit':type==='fp'?'.fp-digit':type==='cp'?'.cp-digit':'.tfa-digit'; document.querySelectorAll(cls).forEach(e=>e.value=''); document.querySelector(cls)?.focus(); }
 
 // ══════════════════════════════════════════════
 // 2FA SETUP (called from dashboard)
@@ -464,9 +503,10 @@ async function tfaStep2() {
   const ok=await verifyTOTP(_pendingSecret,code);
   if(ok) {
     localStorage.setItem('pnl_totp_secret',_pendingSecret);
+    // Sync TOTP secret to Supabase so all devices share it
+    sbUpsert('totp_secret', _pendingSecret).catch(()=>{});
     document.getElementById('tfa2').style.display='none';
     document.getElementById('tfa3').style.display='block';
-    // Update header button
     const btn=document.getElementById('btn2FASetup');
     if(btn) btn.innerHTML='🔐 2FA Active <span class="badge-2fa">ON</span>';
   } else {
@@ -475,61 +515,60 @@ async function tfaStep2() {
   }
 }
 
-async function changePassword() {
-  const cur=prompt('Current password:');
-  if(!cur) return;
-  if(await sha256(cur)!==localStorage.getItem('pnl_pwd_hash')){ alert('Wrong password.'); return; }
-  const np=prompt('New password (min 8 chars):');
-  if(!np||np.length<8){ alert('Too short.'); return; }
-  if(np!==prompt('Confirm new password:')){ alert('Do not match.'); return; }
-  localStorage.setItem('pnl_pwd_hash',await sha256(np));
-  alert('Password changed successfully!');
-}
-
 function closeTFAModal() { document.getElementById('twoFAModal').style.display='none'; }
 
-// ── Reset password from inside dashboard ──
-function openResetFromInside() {
-  const has2FA = !!localStorage.getItem('pnl_totp_secret');
-  if(has2FA) {
-    // Show 2FA verification modal then allow password reset
-    document.getElementById('insideResetModal').style.display='flex';
-    document.getElementById('irStep1').style.display='block';
-    document.getElementById('irStep2').style.display='none';
-    document.getElementById('irOtpErr').textContent='';
-    document.getElementById('irPwdErr').textContent='';
-    clearOTP('ir');
-    setTimeout(()=>document.querySelector('.ir-digit')?.focus(),100);
+// ── Change Password (unified modal) ──
+function openChangePwd() {
+  document.getElementById('cpCurPwd').value='';
+  document.getElementById('cpStep1Err').textContent='';
+  document.getElementById('cpStep2Err').textContent='';
+  document.getElementById('cpStep3Err').textContent='';
+  ['cpStep1','cpStep2','cpStep3'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('cpStep1').style.display='block';
+  document.getElementById('changePwdModal').style.display='flex';
+  setTimeout(()=>document.getElementById('cpCurPwd').focus(),80);
+}
+function closeCPModal() { document.getElementById('changePwdModal').style.display='none'; }
+async function cpVerifyPwd() {
+  const val=document.getElementById('cpCurPwd').value;
+  if(!val) return;
+  const hash=await sha256(val);
+  if(hash!==localStorage.getItem('pnl_pwd_hash')){ document.getElementById('cpStep1Err').textContent='Wrong password.'; return; }
+  const has2FA=!!localStorage.getItem('pnl_totp_secret');
+  document.getElementById('cpStep1').style.display='none';
+  if(has2FA){
+    clearOTP('cp');
+    document.getElementById('cpStep2').style.display='block';
+    setTimeout(()=>document.querySelector('.cp-digit')?.focus(),80);
   } else {
-    // No 2FA — fall back to change password (requires current pwd)
-    changePassword();
+    document.getElementById('cpNewA').value='';
+    document.getElementById('cpNewB').value='';
+    document.getElementById('cpStep3').style.display='block';
+    setTimeout(()=>document.getElementById('cpNewA').focus(),80);
   }
 }
-async function irVerifyTOTP() {
-  const code = getOTP('ir');
-  if(code.length<6){ document.getElementById('irOtpErr').textContent='Enter all 6 digits.'; return; }
-  const ok = await verifyTOTP(localStorage.getItem('pnl_totp_secret'), code);
-  if(ok){
-    document.getElementById('irStep1').style.display='none';
-    document.getElementById('irStep2').style.display='block';
-    document.getElementById('irNewA').value='';
-    document.getElementById('irNewB').value='';
-    setTimeout(()=>document.getElementById('irNewA').focus(),80);
-  } else {
-    document.getElementById('irOtpErr').textContent='Wrong code.';
-    clearOTP('ir');
-  }
+async function cpVerify2FA() {
+  const code=getOTP('cp');
+  if(code.length<6){ document.getElementById('cpStep2Err').textContent='Enter all 6 digits.'; return; }
+  const ok=await verifyTOTP(localStorage.getItem('pnl_totp_secret'),code);
+  if(!ok){ document.getElementById('cpStep2Err').textContent='Wrong code. Try again.'; clearOTP('cp'); return; }
+  document.getElementById('cpStep2').style.display='none';
+  document.getElementById('cpNewA').value='';
+  document.getElementById('cpNewB').value='';
+  document.getElementById('cpStep3').style.display='block';
+  setTimeout(()=>document.getElementById('cpNewA').focus(),80);
 }
-async function irSetNewPassword() {
-  const a=document.getElementById('irNewA').value;
-  const b=document.getElementById('irNewB').value;
-  if(!a||a.length<8){ document.getElementById('irPwdErr').textContent='Min 8 characters.'; return; }
-  if(a!==b){ document.getElementById('irPwdErr').textContent='Passwords do not match.'; return; }
-  localStorage.setItem('pnl_pwd_hash', await sha256(a));
-  document.getElementById('insideResetModal').style.display='none';
-  if(typeof showAlert==='function') showAlert('Password reset successfully!','success');
+async function cpSetNew() {
+  const a=document.getElementById('cpNewA').value;
+  const b=document.getElementById('cpNewB').value;
+  if(!a||a.length<8){ document.getElementById('cpStep3Err').textContent='Min 8 characters.'; return; }
+  if(a!==b){ document.getElementById('cpStep3Err').textContent='Passwords do not match.'; return; }
+  localStorage.setItem('pnl_pwd_hash',await sha256(a));
+  closeCPModal();
+  if(typeof showAlert==='function') showAlert('Password changed successfully!','success');
 }
-function irOtpNav(el,i){ el.value=el.value.replace(/\D/,''); if(el.value&&i<5) el.parentElement.querySelectorAll('.ir-digit')[i+1].focus(); if(getOTP('ir').length===6) irVerifyTOTP(); }
+function cpOtpNav(el,i){ el.value=el.value.replace(/\D/,''); if(el.value&&i<5) el.parentElement.querySelectorAll('.cp-digit')[i+1].focus(); if(getOTP('cp').length===6) cpVerify2FA(); }
+function doLogout() { sessionStorage.removeItem('pnl_authed'); location.reload(); }
 
 initAuth();
 </script>
@@ -548,8 +587,8 @@ initAuth();
     </div>
     <span id="hDataStatus">No data loaded</span>
     <button id="btn2FASetup" onclick="open2FASetup()">🔐 Setup 2FA</button>
-    <button onclick="changePassword()">🔑 Change Password</button>
-    <button onclick="openResetFromInside()">🔓 Reset Password</button>
+    <button onclick="openChangePwd()">🔑 Change Password</button>
+    <button onclick="doLogout()">🚪 Logout</button>
     <button onclick="exportConfig()">⬇ Export Config</button>
     <button onclick="triggerImport()">⬆ Import Config</button>
     <input type="file" id="importInput" accept=".json" style="display:none" onchange="importConfig(event)">
@@ -2373,6 +2412,12 @@ async function syncFromCloud() {
       Object.assign(S.config, cfg);
       S.config.supabase = sb;
       localStorage.setItem('girorganic_pnl_config', JSON.stringify(S.config));
+    }
+
+    // Pull TOTP secret — sync 2FA across devices
+    const totpSecret = await sbGet('totp_secret');
+    if (totpSecret && typeof totpSecret === 'string') {
+      localStorage.setItem('pnl_totp_secret', totpSecret);
     }
 
     const allRows    = await sbFetch('pnl_store?key=like.mtr_%25&select=key,value');
