@@ -2767,7 +2767,7 @@ async function syncFromCloud() {
     fillReconMonthFilter();
     fillPnLMonthFilter();
     // Rebuild P&L with updated config (categories, skuMap, COGS)
-    buildRecon();
+    runReconciliation();
     buildPnL();
     renderPnLTab();
   } catch(e) {
