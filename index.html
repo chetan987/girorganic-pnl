@@ -117,6 +117,13 @@ input[type=number] { width: 110px; }
 .inherited { color: var(--muted); font-style: italic; font-size: 12px; }
 /* scrollable table containers */
 .tbl-scroll { max-height: 420px; overflow-y: auto; }
+/* ── HELP TOOLTIP ── */
+.help-icon { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#e8f0ee; color:var(--teal); font-size:10px; font-weight:700; cursor:pointer; margin-left:6px; border:1px solid var(--teal); flex-shrink:0; position:relative; vertical-align:middle; }
+.help-icon:hover .help-tip { display:block; }
+.help-tip { display:none; position:absolute; left:22px; top:-4px; background:#1a2b2b; color:#fff; font-size:11px; line-height:1.5; padding:8px 12px; border-radius:8px; width:260px; z-index:999; font-weight:400; pointer-events:none; box-shadow:0 4px 16px rgba(0,0,0,.3); }
+.help-tip::before { content:''; position:absolute; left:-5px; top:8px; border:5px solid transparent; border-right-color:#1a2b2b; border-left:none; }
+.card-header { display:flex; align-items:center; gap:4px; margin-bottom:14px; }
+.card-header h2 { margin-bottom:0; }
 /* ── CHART ── */
 .chart-wrap { position: relative; height: 280px; }
 /* ── RECON COLORS ── */
@@ -2304,17 +2311,17 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
   }
 
   let html = unmappedBanner + `<div class="stat-cards">
-    <div class="stat"><div class="label">Gross Sales</div><div class="value">₹${fmtK(t.grossSales)}</div><div class="sub">${Math.round(t.units)} units</div></div>
-    <div class="stat"><div class="label">Net Sales</div><div class="value">₹${fmtK(t.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
-    <div class="stat"><div class="label">Discount</div><div class="value neg">₹${fmtK(Math.abs(t.promoRebates))}</div><div class="sub">${t.grossSales ? (Math.abs(t.promoRebates)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Amazon Fees</div><div class="value neg">₹${fmtK(Math.abs(t.totalFees))}</div><div class="sub">${t.grossSales ? (Math.abs(t.totalFees)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">COGS</div><div class="value neg">₹${fmtK(t.totalCogs)}</div><div class="sub">${t.grossSales ? (t.totalCogs/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Ad Spend</div><div class="value neg">₹${fmtK(adSpend)}</div><div class="sub">${t.grossSales ? (adSpend/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Net Contribution</div><div class="value ${t.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(t.netContrib)}</div><div class="sub">${t.marginPct.toFixed(1)}% margin</div></div>
+    <div class="stat"><div class="label">Gross Sales ${hi('Total product sales value before any deductions. This is the MRP × units sold.')}</div><div class="value">₹${fmtK(t.grossSales)}</div><div class="sub">${Math.round(t.units)} units</div></div>
+    <div class="stat"><div class="label">Net Sales ${hi('Gross Sales minus promotional discounts, plus any shipping credits Amazon collected from the buyer.')}</div><div class="value">₹${fmtK(t.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
+    <div class="stat"><div class="label">Discount ${hi('Promotional rebates — coupons, lightning deals, percentage-off promotions. Amazon deducts these from your payout.')}</div><div class="value neg">₹${fmtK(Math.abs(t.promoRebates))}</div><div class="sub">${t.grossSales ? (Math.abs(t.promoRebates)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Amazon Fees ${hi('Total of: Referral/closing fees + FBA fulfilment fees + storage fees + Easy Ship/MFN shipping fees + other transaction fees.')}</div><div class="value neg">₹${fmtK(Math.abs(t.totalFees))}</div><div class="sub">${t.grossSales ? (Math.abs(t.totalFees)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">COGS ${hi('Cost of Goods Sold — your product manufacturing/purchase cost. Enter per-product rates in the COGS tab. Shows ₹0 if not entered.')}</div><div class="value neg">₹${fmtK(t.totalCogs)}</div><div class="sub">${t.grossSales ? (t.totalCogs/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Ad Spend ${hi('Total Amazon advertising spend (SP + SB + SD) for this month. Enter monthly totals in the Ad Spend section under COGS tab.')}</div><div class="value neg">₹${fmtK(adSpend)}</div><div class="sub">${t.grossSales ? (adSpend/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Net Contribution ${hi('Money left after Amazon releases payment, minus your COGS and ad spend. This is your actual profit before income tax.')}</div><div class="value ${t.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(t.netContrib)}</div><div class="sub">${t.marginPct.toFixed(1)}% margin</div></div>
   </div>`;
 
   if (!catFilter) {
-    html += `<div class="card"><h2>P&L Waterfall — ${my}</h2><div class="waterfall">
+    html += `<div class="card"><h2>P&L Waterfall — ${my} ${hi('Step-by-step breakdown of how Amazon calculates your payout. Start from Gross Sales → deduct discounts → deduct fees → deduct COGS & ads = Net Contribution.')}</h2><div class="waterfall">
       ${wfRow('Gross Product Sales', t.grossSales, t.grossSales, 'income')}
       ${wfRow('Promotional Rebates (Discount)', t.promoRebates, t.grossSales, 'cost')}
       ${wfRow('Shipping Credits', t.shippingCr, t.grossSales, t.shippingCr >= 0 ? 'income' : 'cost')}
@@ -2385,9 +2392,13 @@ function renderProductTable(data, grossSales, viewMode, my, catFilter) {
   const thead = `<thead><tr>
     <th>Product</th><th>Category</th>
     <th class="r">Units</th><th class="r">Revenue (₹)</th><th class="r">ASP (₹)</th>
-    <th class="r">Discount (₹)</th><th class="r">Commission (₹)</th><th class="r">FBA Fee (₹)</th>
-    <th class="r">Released (₹)</th><th class="r">COGS (₹)</th>
-    <th class="r">Contribution (₹)</th><th class="r">Margin %</th>
+    <th class="r">Discount (₹) ${hi('Promotional rebates deducted from your payout — coupons, deals, etc.')}</th>
+    <th class="r">Commission (₹) ${hi('Amazon referral + closing fees. Typically 5-15% depending on category.')}</th>
+    <th class="r">FBA Fee (₹) ${hi('Fulfilment by Amazon picking, packing and shipping fees per unit.')}</th>
+    <th class="r">Released (₹) ${hi('Net amount Amazon actually released to you = Sales − Discount − All Fees.')}</th>
+    <th class="r">COGS (₹) ${hi('Your product cost. Set in COGS tab. Shows ₹0 if not entered for this product.')}</th>
+    <th class="r">Contribution (₹) ${hi('Released amount minus COGS. Positive = profitable. Does not include ad spend (shown in summary above).')}</th>
+    <th class="r">Margin % ${hi('Contribution ÷ Revenue × 100. Shows how much of each rupee of sales you keep after fees and COGS.')}</th>
   </tr></thead>`;
 
   const pRow = (p, isSub=false) => {
@@ -2396,7 +2407,7 @@ function renderProductTable(data, grossSales, viewMode, my, catFilter) {
     const rowStyle = isDisc ? 'opacity:0.55;background:#f9f9f7' : (isSub ? 'background:#fafaf5' : '');
     const nameStyle = isDisc ? 'text-decoration:line-through;color:var(--muted)' : (isSub ? 'padding-left:24px' : '');
     return `<tr${hasFlag?' class="flagged"':''} style="${rowStyle}"}>
-      <td style="${nameStyle}">${p.name}${hasFlag?` <span class="badge warn">⚠ partial</span>`:''}${isDisc?' <span class="badge grey" style="font-size:10px">discontinued</span>':''}</td>
+      <td style="${nameStyle}">${p.name}${hasFlag?` <span class="badge warn">⚠ partial</span>${hi('This product has orders in your MTR that have no matching payment settlement yet. Revenue is included but Amazon has not released the money — could be pending settlement cycle or under review.')}`:''}${isDisc?' <span class="badge grey" style="font-size:10px">discontinued</span>':''}</td>
       <td><span class="badge ${p.category==='Combo'?'blue':p.category==='Discontinued'?'grey':p.category==='Uncategorized'?'grey':'green'}">${p.category}</span></td>
       <td class="r">${fmt1(p.units)}</td>
       <td class="r">₹${fmt(p.productSales)}</td>
@@ -2483,12 +2494,12 @@ function renderFYPnL(div, viewMode, catFilter) {
   const fyMargin = fy.grossSales ? fy.netContrib/fy.grossSales*100 : 0;
 
   html += `<div class="stat-cards">
-    <div class="stat"><div class="label">FY Gross Sales</div><div class="value">₹${fmtK(fy.grossSales)}</div><div class="sub">${Math.round(fy.units)} units</div></div>
-    <div class="stat"><div class="label">FY Net Sales</div><div class="value">₹${fmtK(fy.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
-    <div class="stat"><div class="label">Total Fees</div><div class="value neg">₹${fmtK(Math.abs(fy.totalFees))}</div><div class="sub">${fy.grossSales ? (Math.abs(fy.totalFees)/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Total COGS</div><div class="value neg">₹${fmtK(fy.totalCogs)}</div><div class="sub">${fy.grossSales ? (fy.totalCogs/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Total Ad Spend</div><div class="value neg">₹${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">FY Net Contribution</div><div class="value ${fy.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(fy.netContrib)}</div><div class="sub">${fyMargin.toFixed(1)}% margin</div></div>
+    <div class="stat"><div class="label">FY Gross Sales ${hi('Total revenue across all months in this financial year before any deductions.')}</div><div class="value">₹${fmtK(fy.grossSales)}</div><div class="sub">${Math.round(fy.units)} units</div></div>
+    <div class="stat"><div class="label">FY Net Sales ${hi('Gross sales minus all promotional discounts plus shipping credits. This is what Amazon recognised as your revenue.')}</div><div class="value">₹${fmtK(fy.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
+    <div class="stat"><div class="label">Total Fees ${hi('All Amazon fees for the year: referral fees, FBA fees, storage, Easy Ship, and other transaction charges.')}</div><div class="value neg">₹${fmtK(Math.abs(fy.totalFees))}</div><div class="sub">${fy.grossSales ? (Math.abs(fy.totalFees)/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Total COGS ${hi('Total cost of all goods sold across the year. Enter product costs in the COGS tab to see accurate numbers here.')}</div><div class="value neg">₹${fmtK(fy.totalCogs)}</div><div class="sub">${fy.grossSales ? (fy.totalCogs/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Total Ad Spend ${hi('Total Amazon advertising spend for the year. Enter monthly ad spends in the Ad Spend section under COGS tab.')}</div><div class="value neg">₹${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">FY Net Contribution ${hi('Your actual profit for the year after all fees, COGS, and ad spend. This is before income tax and any other business expenses.')}</div><div class="value ${fy.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(fy.netContrib)}</div><div class="sub">${fyMargin.toFixed(1)}% margin</div></div>
   </div>`;
 
   // Month-over-month table
@@ -2556,6 +2567,8 @@ function exportPnL() {
 // ═══════════════════════════════════════════════════════════════════
 // FORMATTING HELPERS
 // ═══════════════════════════════════════════════════════════════════
+function hi(tip) { return `<span class="help-icon">ⓘ<span class="help-tip">${tip}</span></span>`; }
+
 function fmt(n) { return (Math.round((n||0)*100)/100).toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:0}); }
 function fmt1(n) { return (Math.round((n||0)*10)/10).toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:1}); }
 function fmtK(n) {
