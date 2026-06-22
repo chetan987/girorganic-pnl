@@ -1456,9 +1456,22 @@ function pnlQuickMap(sku, safeId) {
   saveConfig();
   renderSkuMapTable();
   updateUnmappedSkus();
-  showAlert(`Mapped "${sku}" → "${prod}". Click Calculate P&L to refresh.`, 'success');
-  buildPnL();
-  renderPnLTab();
+  // Remove just this row — no full re-render
+  const row = prodEl?.closest('tr');
+  if (row) {
+    row.style.background = '#d1fae5';
+    row.innerHTML = `<td colspan="4" style="color:#065f46;font-size:12px;padding:6px 10px">✓ Mapped <strong>${sku}</strong> → <strong>${prod}</strong>${cat ? ` (${cat})` : ''}</td>`;
+    setTimeout(() => {
+      row.remove();
+      // If no rows left, remove the whole card
+      const tbody = document.querySelector('#pnlUnmappedCard tbody');
+      if (tbody && tbody.children.length === 0) {
+        document.getElementById('pnlUnmappedCard')?.remove();
+        buildPnL();
+        renderPnLTab();
+      }
+    }, 1200);
+  }
 }
 
 function updateSkuCategory(sku, cat) {
@@ -2101,6 +2114,7 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
         <td>
           <select id="pnlMapCat_${sku.replace(/[^a-z0-9]/gi,'_')}" style="height:32px;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">
             <option value="">— Category —</option>
+            <option value="Combo">Combo</option>
             ${S.config.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
           </select>
         </td>
@@ -2109,7 +2123,7 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
         </td>
       </tr>`).join('');
     unmappedBanner = `
-      <div class="card" style="border-color:#f59e0b;margin-bottom:14px">
+      <div id="pnlUnmappedCard" class="card" style="border-color:#f59e0b;margin-bottom:14px">
         <h2 style="color:#92400e">⚠ ${unmappedSkus.length} Unmapped SKU(s) — COGS is ₹0 for these</h2>
         <p style="font-size:12px;color:#78350f;margin-bottom:10px">Map each SKU to a product name below, then click <strong>Calculate P&amp;L</strong> again to apply COGS.</p>
         <div class="tbl-wrap"><table>
