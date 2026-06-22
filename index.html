@@ -1455,8 +1455,10 @@ function buildUnmappedCard(skus, prefix) {
     const comboHint = isCombo
       ? `<span class="badge blue" style="margin-left:4px">combo defined</span>`
       : '';
+    // HTML-escape for display; show placeholder if empty/blank
+    const skuDisplay = sku.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').trim() || '(blank SKU)';
     return `<tr id="unmappedRow_${sid}">
-      <td><code style="font-size:12px;background:#fef3c7;padding:2px 6px;border-radius:4px">${sku}</code>${comboHint}</td>
+      <td><code style="font-size:12px;background:#fef3c7;padding:2px 6px;border-radius:4px">${skuDisplay}</code>${comboHint}</td>
       <td>
         <input list="prodList_${sid}" id="mapProd_${sid}"
           class="auth-inp" style="height:32px;font-size:12px;margin:0;padding:4px 8px;width:240px"
