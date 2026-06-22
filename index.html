@@ -8,7 +8,6 @@
 <title>Data Analytics Tool</title>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <style>
 :root {
@@ -238,7 +237,7 @@ input[type=number] { width: 110px; }
     <!-- Step 2: QR code -->
     <div id="tfa2" style="display:none">
       <p>Scan this QR code with <strong>Google Authenticator</strong></p>
-      <canvas id="qrCanvas" style="margin:10px auto;display:block;border-radius:8px"></canvas>
+      <img id="qrImg" style="margin:10px auto;display:block;border-radius:8px;width:200px;height:200px;background:#eee" alt="QR Code">
       <p style="font-size:11px;color:#6b7a7a;margin:8px 0">Or enter this key manually:</p>
       <code id="totpSecretDisplay" style="background:#f0f0e8;padding:4px 8px;border-radius:4px;font-size:12px;word-break:break-all;display:block;margin-bottom:12px"></code>
       <p style="font-size:13px;margin-bottom:8px">Enter the 6-digit code from the app to confirm:</p>
@@ -426,21 +425,30 @@ async function open2FASetup() {
 }
 
 async function tfaStep1() {
-  const pwd=document.getElementById('tfaPwd').value;
-  if(!pwd) return;
-  const hash=await sha256(pwd);
-  if(hash!==localStorage.getItem('pnl_pwd_hash')) { document.getElementById('tfa1Err').textContent='Wrong password.'; return; }
-  // Generate new secret + show QR
-  _pendingSecret=genSecret();
-  document.getElementById('totpSecretDisplay').textContent=_pendingSecret;
-  const uri=`otpauth://totp/Analytics%20Dashboard?secret=${_pendingSecret}&issuer=Analytics&algorithm=SHA1&digits=6&period=30`;
-  const canvas=document.getElementById('qrCanvas');
-  QRCode.toCanvas(canvas, uri, {width:200,margin:2}, ()=>{});
-  clearOTP('tfa');
-  document.getElementById('tfa2Err').textContent='';
-  document.getElementById('tfa1').style.display='none';
-  document.getElementById('tfa2').style.display='block';
-  setTimeout(()=>document.querySelector('.tfa-digit')?.focus(),100);
+  const pwd = document.getElementById('tfaPwd').value;
+  if (!pwd) return;
+  document.getElementById('tfa1Err').textContent = '';
+  try {
+    const hash = await sha256(pwd);
+    if (hash !== localStorage.getItem('pnl_pwd_hash')) {
+      document.getElementById('tfa1Err').textContent = 'Wrong password.'; return;
+    }
+    _pendingSecret = genSecret();
+    document.getElementById('totpSecretDisplay').textContent = _pendingSecret;
+
+    // QR code via Google Charts API — no library needed
+    const uri = `otpauth://totp/Analytics?secret=${_pendingSecret}&issuer=Analytics&digits=6&period=30`;
+    const qrUrl = `https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=${encodeURIComponent(uri)}`;
+    document.getElementById('qrImg').src = qrUrl;
+
+    clearOTP('tfa');
+    document.getElementById('tfa2Err').textContent = '';
+    document.getElementById('tfa1').style.display = 'none';
+    document.getElementById('tfa2').style.display = 'block';
+    setTimeout(() => document.querySelector('.tfa-digit')?.focus(), 100);
+  } catch(e) {
+    document.getElementById('tfa1Err').textContent = 'Error: ' + e.message;
+  }
 }
 
 async function tfaStep2() {
