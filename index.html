@@ -1,0 +1,2055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GirOrganic · Amazon.in P&L Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --teal: #0B3D3D; --teal-light: #1a5e5e; --cream: #F4EFA1; --gold: #C5A253;
+  --bg: #f5f5f0; --card: #fff; --text: #1a2b2b; --muted: #6b7a7a;
+  --pos: #1e7a4c; --neg: #c0392b; --warn: #e67e22; --border: #e0e0d8;
+  --accent: #0B3D3D; --blue: #2563eb;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+/* ── HEADER ── */
+header { background: var(--teal); color: #fff; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+header h1 { font-size: 18px; font-weight: 700; letter-spacing: .02em; }
+header .hright { display: flex; gap: 8px; align-items: center; font-size: 12px; color: #a8d0d0; }
+header .hright button { background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.3); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+header .hright button:hover { background: rgba(255,255,255,.25); }
+/* ── TABS ── */
+nav.tabs { background: var(--teal-light); display: flex; padding: 0 24px; gap: 2px; }
+nav.tabs button { background: transparent; color: rgba(255,255,255,.7); border: none; padding: 11px 18px; cursor: pointer; font-size: 13px; font-weight: 500; border-bottom: 3px solid transparent; transition: .15s; }
+nav.tabs button:hover { color: #fff; background: rgba(255,255,255,.08); }
+nav.tabs button.active { color: #fff; border-bottom-color: var(--cream); background: rgba(255,255,255,.1); }
+/* ── LAYOUT ── */
+main { padding: 20px 24px 60px; max-width: 1440px; margin: 0 auto; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+/* ── COMMON ── */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+.card h2 { font-size: 14px; color: var(--teal); margin-bottom: 14px; font-weight: 600; }
+.card h3 { font-size: 13px; color: var(--muted); margin-bottom: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.row { display: flex; gap: 16px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 280px; }
+/* ── BUTTONS ── */
+.btn { display: inline-flex; align-items: center; gap: 6px; background: var(--teal); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn:hover { background: var(--teal-light); }
+.btn.secondary { background: #fff; color: var(--teal); border: 1px solid var(--teal); }
+.btn.danger { background: #c0392b; }
+.btn.small { padding: 4px 10px; font-size: 12px; }
+.btn.warn { background: var(--warn); }
+/* ── TABLES ── */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { background: #eeeee6; color: var(--teal); padding: 9px 10px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; position: sticky; top: 0; cursor: pointer; user-select: none; }
+th.r { text-align: right; }
+td { padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td.r { text-align: right; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8f8f2; }
+tr.flagged td { background: #fef3e8; }
+tr.flagged td:first-child::before { content: '⚠ '; color: var(--warn); }
+tr.total-row td { font-weight: 700; background: #eeeee6 !important; border-top: 2px solid var(--border); }
+/* ── STAT CARDS ── */
+.stat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.stat .label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.stat .value { font-size: 22px; font-weight: 700; color: var(--teal); margin-top: 4px; }
+.stat .value.neg { color: var(--neg); }
+.stat .value.pos { color: var(--pos); }
+.stat .value.warn { color: var(--warn); }
+.stat .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+/* ── FORMS ── */
+.form-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+input[type=text], input[type=number], select { padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fff; color: var(--text); outline: none; }
+input[type=text]:focus, input[type=number]:focus, select:focus { border-color: var(--teal); }
+input[type=number] { width: 110px; }
+/* ── UPLOAD ── */
+.drop-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 36px 24px; text-align: center; color: var(--muted); cursor: pointer; transition: .2s; }
+.drop-zone:hover, .drop-zone.dragover { border-color: var(--teal); background: #f0f5f5; color: var(--teal); }
+.drop-zone .icon { font-size: 32px; margin-bottom: 8px; }
+.drop-zone p { font-size: 13px; }
+.drop-zone input[type=file] { display: none; }
+/* ── BADGES / TAGS ── */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.badge.green { background: #d4edda; color: #1a6b3a; }
+.badge.red { background: #fde8e8; color: #c0392b; }
+.badge.warn { background: #fef3e8; color: #e67e22; }
+.badge.blue { background: #e8f0fe; color: #2563eb; }
+.badge.grey { background: #eee; color: #6b7a7a; }
+/* ── MISC ── */
+.alert { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+.alert.info { background: #e8f4fd; color: #1a5276; border: 1px solid #aed6f1; }
+.alert.warn { background: #fef3e8; color: #7e5109; border: 1px solid #f0b27a; }
+.alert.success { background: #d5f5e3; color: #1e5631; border: 1px solid #82e0aa; }
+.alert.error { background: #fde8e8; color: #a93226; border: 1px solid #f1948a; }
+.empty { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
+.help { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+.chip { display: inline-block; background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; border-radius: 12px; padding: 2px 10px; font-size: 11px; font-weight: 600; margin: 2px; }
+.chip.removable { cursor: pointer; }
+.chip.removable:hover { background: #fde8e8; color: #c0392b; border-color: #fca5a5; }
+/* ── MONTH BADGE ── */
+.month-badge { display: inline-flex; align-items: center; gap: 4px; background: var(--teal); color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+/* ── WATERFALL ── */
+.waterfall { display: flex; flex-direction: column; gap: 2px; }
+.wf-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; }
+.wf-row.header { background: var(--teal); color: #fff; font-weight: 700; }
+.wf-row.subtotal { background: #e8f0ee; font-weight: 600; }
+.wf-row.total { background: var(--teal); color: #fff; font-weight: 700; border-radius: 8px; margin-top: 4px; }
+.wf-row.cost { background: #fff3f3; }
+.wf-row.income { background: #f0fff4; }
+.wf-label { flex: 1; font-size: 13px; }
+.wf-value { width: 130px; text-align: right; font-size: 13px; font-weight: 600; }
+.wf-pct { width: 70px; text-align: right; font-size: 12px; color: var(--muted); }
+/* ── COGS TABLE ── */
+.cogs-table input[type=number] { width: 100%; padding: 5px 8px; }
+.cogs-table td { padding: 5px 8px; }
+.inherited { color: var(--muted); font-style: italic; font-size: 12px; }
+/* scrollable table containers */
+.tbl-scroll { max-height: 420px; overflow-y: auto; }
+/* ── CHART ── */
+.chart-wrap { position: relative; height: 280px; }
+/* ── RECON COLORS ── */
+.match { color: var(--pos); font-weight: 600; }
+.unmatch { color: var(--neg); font-weight: 600; }
+/* ── COMBO ── */
+.combo-components { display: flex; flex-wrap: wrap; gap: 4px; }
+/* ── PROGRESS BAR ── */
+.progress { background: #e0e0d8; border-radius: 4px; height: 8px; overflow: hidden; margin-top: 4px; }
+.progress-fill { height: 100%; background: var(--pos); border-radius: 4px; transition: width .3s; }
+.progress-fill.warn { background: var(--warn); }
+.progress-fill.red { background: var(--neg); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌿 GirOrganic · Amazon.in P&L Dashboard</h1>
+  <div class="hright">
+    <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);padding:5px 10px;border-radius:8px">
+      <span style="font-size:11px;color:#a8d0d0;font-weight:600">FINANCIAL YEAR</span>
+      <select id="fySelector" onchange="onFYChange()" style="background:transparent;border:none;color:#fff;font-size:13px;font-weight:700;cursor:pointer;outline:none">
+        <option value="FY2025-26">FY 2025-26 (Apr 25 – Mar 26)</option>
+        <option value="FY2024-25">FY 2024-25 (Apr 24 – Mar 25)</option>
+        <option value="FY2023-24">FY 2023-24 (Apr 23 – Mar 24)</option>
+        <option value="FY2026-27">FY 2026-27 (Apr 26 – Mar 27)</option>
+      </select>
+    </div>
+    <span id="hDataStatus">No data loaded</span>
+    <button onclick="exportConfig()">⬇ Export Config</button>
+    <button onclick="triggerImport()">⬆ Import Config</button>
+    <input type="file" id="importInput" accept=".json" style="display:none" onchange="importConfig(event)">
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="upload">📤 Upload Data</button>
+  <button class="tab" data-tab="sku">🗺 SKU &amp; Combos</button>
+  <button class="tab" data-tab="cogs">💰 COGS</button>
+  <button class="tab" data-tab="recon">🔍 Reconciliation</button>
+  <button class="tab" data-tab="pnl">📊 P&amp;L Report</button>
+  <button class="tab" data-tab="calc">🧮 Margin Calculator</button>
+</nav>
+
+<main>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TAB 1: UPLOAD                                          -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="tab-panel active" id="tab-upload">
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <h2>MTR Files (B2B + B2C)</h2>
+        <p class="help" style="margin-bottom:12px;">Upload one or more MTR CSV files from Seller Central → Reports → Tax → Monthly Tax Report. Both B2B and B2C files accepted. You can upload multiple months at once.</p>
+        <div class="drop-zone" id="mtrDrop" onclick="document.getElementById('mtrInput').click()">
+          <div class="icon">📄</div>
+          <p><strong>Click or drag MTR CSV files here</strong></p>
+          <p style="margin-top:4px;font-size:12px;">Accepts: MTR_B2B-*.csv, MTR_B2C-*.csv</p>
+          <input type="file" id="mtrInput" multiple accept=".csv" onchange="handleMTRUpload(event)">
+        </div>
+        <div id="mtrStatus" style="margin-top:10px;"></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h2>Payment / Settlement Report</h2>
+        <p class="help" style="margin-bottom:12px;">Download from Seller Central → Reports → Payments → All Statements → Custom Date. Upload one or more files. Handles Amazon's 13-row header automatically.</p>
+        <div class="drop-zone" id="payDrop" onclick="document.getElementById('payInput').click()">
+          <div class="icon">💳</div>
+          <p><strong>Click or drag Payment Report CSV here</strong></p>
+          <p style="margin-top:4px;font-size:12px;">Accepts: .csv or .xlsx</p>
+          <input type="file" id="payInput" multiple accept=".csv,.xlsx" onchange="handlePayUpload(event)">
+        </div>
+        <div id="payStatus" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Ad Spend (Monthly)</h2>
+    <p class="help" style="margin-bottom:12px;">Enter your total Amazon.in ad spend (SP + SB + SD) per month including GST. This is account-level and subtracted from P&L.</p>
+    <div id="adSpendTable"></div>
+    <button class="btn secondary small" style="margin-top:10px" onclick="addAdSpendRow()">+ Add Month</button>
+  </div>
+
+  <div class="card" style="background:#f0f7f0;border-color:#c3e0c8">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <strong style="color:var(--teal)">ℹ How uploads work</strong>
+        <p class="help" style="margin-top:4px">
+          Data is saved in your browser automatically — <strong>no need to re-upload every time you open this file.</strong><br>
+          Each upload <strong>adds to existing data</strong> (deduped). Drop April files now, May files next month — they accumulate.<br>
+          Drop multiple MTR files at once (e.g. B2B + B2C for the same month, or multiple months together).
+        </p>
+      </div>
+      <button class="btn danger small" onclick="if(confirm('Clear all uploaded MTR + payment data? Config (SKU map, COGS, combos) is kept.')) clearRawData()">🗑 Clear All Uploaded Data</button>
+    </div>
+  </div>
+
+  <!-- CLOUD SYNC -->
+  <div class="card" style="border-color:#c7d2fe;background:#f5f3ff">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+      <div>
+        <h2 style="color:#4338ca">☁ Cloud Sync — Active</h2>
+        <p class="help" style="margin-top:4px">Connected to Supabase. Data syncs automatically on every change. Opens fresh from cloud on any device, any browser — no setup needed.</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn secondary" style="border-color:#4338ca;color:#4338ca" onclick="syncFromCloud()">⬇ Force Pull</button>
+        <button class="btn" style="background:#4338ca" onclick="syncToCloud()">⬆ Force Push</button>
+        <div id="syncStatus" class="help" style="margin-left:4px"></div>
+      </div>
+    </div>
+    <div id="syncLog" style="margin-top:8px"></div>
+    <!-- Hidden inputs kept for connectSupabase() compatibility -->
+    <input type="hidden" id="sbUrl"><input type="hidden" id="sbKey">
+  </div>
+
+  <div class="card" id="uploadSummaryCard" style="display:none">
+    <h2>Data Summary</h2>
+    <div id="uploadSummary"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TAB 2: SKU & COMBOS                                   -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-sku">
+
+  <!-- STEP A: Categories first -->
+  <div class="card">
+    <h2>Step 1 — Manage Categories</h2>
+    <p class="help" style="margin-bottom:12px;">Add all your product categories first. <strong>"Combo"</strong> is built-in and auto-assigned to all combo SKUs. Then go to Step 2 to map SKUs.</p>
+    <div class="form-row">
+      <div class="field">
+        <label>Category Name</label>
+        <input type="text" id="newCatName" placeholder="e.g. Ghee, Oils, Peanut Butter…" style="width:240px"
+          onkeydown="if(event.key==='Enter') addCategory()">
+      </div>
+      <button class="btn" onclick="addCategory()">+ Add Category</button>
+    </div>
+    <div id="categoryChips" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+      <span class="chip" style="background:#e8f0ee;color:var(--teal);border-color:var(--teal)">Combo (built-in)</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <h2>Step 2 — SKU → Product + Category Mapping</h2>
+        <p class="help" style="margin-bottom:12px;">Map each Amazon SKU → product name → category. For combo SKUs use Step 3 below.</p>
+        <div class="form-row">
+          <div class="field">
+            <label>Amazon SKU</label>
+            <input type="text" id="newSku" placeholder="e.g. GHE-1L-001" style="width:160px">
+          </div>
+          <div class="field">
+            <label>Product Name</label>
+            <input type="text" id="newSkuProduct" placeholder="e.g. Ghee 1L" style="width:160px">
+          </div>
+          <div class="field">
+            <label>Category</label>
+            <select id="newSkuCategory" style="width:140px">
+              <option value="">— select —</option>
+            </select>
+          </div>
+          <button class="btn" onclick="addSkuMap()">Add</button>
+        </div>
+        <div id="skuMapTableWrap" class="tbl-wrap tbl-scroll" style="max-height:360px;margin-top:8px"></div>
+        <p class="help" style="margin-top:8px">⚡ Unmapped SKUs in uploaded data: <span id="unmappedSkus" style="color:var(--warn);font-weight:600">—</span></p>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h2>Step 3 — Combo Definitions</h2>
+        <p class="help" style="margin-bottom:12px;">Define what each combo SKU contains. Auto-assigned category = <strong>Combo</strong>. Revenue splits by COGS ratio across components.</p>
+        <div class="form-row">
+          <div class="field">
+            <label>Combo SKU</label>
+            <input type="text" id="newComboSku" placeholder="e.g. GHEE-PB-COMBO" style="width:160px">
+          </div>
+          <div class="field">
+            <label>Combo Name</label>
+            <input type="text" id="newComboName" placeholder="e.g. Ghee 1L + PB 500g" style="width:160px">
+          </div>
+          <button class="btn" onclick="addCombo()">Add Combo</button>
+        </div>
+        <div id="comboList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TAB 3: COGS                                            -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-cogs">
+  <div class="card">
+    <h2>Monthly COGS per Product</h2>
+    <p class="help" style="margin-bottom:14px;">Enter cost per unit (₹, GST-exclusive) for each product each month. If a product has no entry for a given month, the most recent previous month's value is used automatically (shown in grey).</p>
+    <div class="form-row" style="margin-bottom:16px">
+      <div class="field">
+        <label>Month</label>
+        <select id="cogsMonthSel" onchange="renderCogsTab()"></select>
+      </div>
+      <div class="field">
+        <label>Year</label>
+        <select id="cogsYearSel" onchange="renderCogsTab()"></select>
+      </div>
+      <div class="field">
+        <label>Category (optional)</label>
+        <select id="cogsCatFilter" onchange="renderCogsTab()" style="width:160px">
+          <option value="">All Categories</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Search product</label>
+        <input type="text" id="cogsSearch" placeholder="type to filter…" style="width:160px" oninput="renderCogsTab()">
+      </div>
+      <button class="btn secondary" onclick="copyCogsFromPrev()">Copy from Previous Month</button>
+    </div>
+    <div id="cogsTableWrap"></div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="btn" onclick="saveCogsForMonth()">💾 Save COGS</button>
+      <button class="btn secondary small" onclick="addCogsProduct()">+ Add Product</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TAB 4: RECONCILIATION                                  -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-recon">
+  <div class="card">
+    <div class="form-row" style="margin-bottom:0;flex-wrap:wrap;gap:10px">
+      <div class="field">
+        <label>Filter by MTR Month</label>
+        <select id="reconMonthFilter" onchange="renderReconTab()">
+          <option value="">All Months</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Show</label>
+        <select id="reconViewFilter" onchange="renderReconTab()">
+          <option value="unpaid">⚠ Unpaid Only</option>
+          <option value="all">All Orders</option>
+          <option value="cross">Cross-Month Settlements</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Search Order ID / SKU</label>
+        <input type="text" id="reconSearch" placeholder="Search…" oninput="renderReconTab()" style="width:180px">
+      </div>
+      <button class="btn" onclick="runReconciliation(); renderReconTab()">🔄 Run Reconciliation</button>
+      <button class="btn secondary" onclick="exportRecon()">⬇ Export Unpaid CSV</button>
+    </div>
+  </div>
+  <div id="reconContent"><div class="empty">Upload MTR + payment data, then click Run Reconciliation.</div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TAB 5: P&L REPORT                                     -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-pnl">
+  <div class="card">
+    <div class="form-row" style="margin-bottom:0">
+      <div class="field">
+        <label>Month</label>
+        <select id="pnlMonthSel" onchange="renderPnLTab()">
+          <option value="">All Months (FY View)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Category Filter</label>
+        <select id="pnlCatFilter" onchange="renderPnLTab()">
+          <option value="">All Categories</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Group By</label>
+        <select id="pnlViewSel" onchange="renderPnLTab()">
+          <option value="product">By Product</option>
+          <option value="category">By Category</option>
+        </select>
+      </div>
+      <button class="btn" onclick="buildPnL(); renderPnLTab()">🔄 Calculate P&amp;L</button>
+      <button class="btn secondary" onclick="exportPnL()">⬇ Export CSV</button>
+    </div>
+  </div>
+  <div id="pnlContent"><div class="empty">Upload data and click Calculate P&amp;L.</div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TAB 6: MARGIN CALCULATOR                              -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-calc">
+  <div class="row">
+    <div class="col" style="min-width:320px;max-width:420px">
+      <div class="card">
+        <h2>🧮 Inputs</h2>
+
+        <div class="field" style="margin-bottom:12px">
+          <label>Product</label>
+          <select id="calcProduct" onchange="calcUpdateFromProduct()" style="width:100%">
+            <option value="">— select product —</option>
+          </select>
+        </div>
+
+        <div class="field" style="margin-bottom:12px">
+          <label>Reference Month (for Amazon charges)</label>
+          <select id="calcRefMonth" onchange="calcRun()" style="width:100%">
+            <option value="">— select month —</option>
+          </select>
+          <p class="help" style="margin-top:4px">Commission %, FBA fee, discount % pulled from this month's actuals</p>
+        </div>
+
+        <div class="field" style="margin-bottom:12px">
+          <label>Selling Price / MRP (₹)</label>
+          <input type="number" id="calcPrice" step="1" min="0" style="width:100%" oninput="calcRun()" placeholder="e.g. 999">
+        </div>
+
+        <div class="field" style="margin-bottom:12px">
+          <label>COGS per Unit (₹) — test different values here</label>
+          <input type="number" id="calcCogs" step="1" min="0" style="width:100%" oninput="calcRun()" placeholder="e.g. 450">
+        </div>
+
+        <div class="field" style="margin-bottom:12px">
+          <label>Ad Spend % of Revenue (₹)</label>
+          <input type="number" id="calcAdPct" step="0.1" min="0" value="10" style="width:100%" oninput="calcRun()" placeholder="e.g. 10">
+          <p class="help" style="margin-top:4px">Auto-filled from reference month. Edit to test scenarios.</p>
+        </div>
+
+        <div class="field" style="margin-bottom:12px">
+          <label>Override Discount % (optional)</label>
+          <input type="number" id="calcDiscPct" step="0.1" min="0" style="width:100%" oninput="calcRun()" placeholder="leave blank = use actuals">
+        </div>
+
+        <button class="btn" style="width:100%;margin-top:4px" onclick="calcRun()">Calculate →</button>
+      </div>
+
+      <div class="card" style="margin-top:0">
+        <h2>📌 Quick Scenarios</h2>
+        <p class="help" style="margin-bottom:10px">Test COGS levels and see margin impact instantly</p>
+        <div id="calcScenarios"></div>
+        <button class="btn secondary small" onclick="calcAddScenario()">+ Add Scenario</button>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card" id="calcResultCard">
+        <h2>Contribution Margin Waterfall</h2>
+        <div class="empty" id="calcEmpty">Select a product and reference month to begin.</div>
+        <div id="calcWaterfall" style="display:none"></div>
+      </div>
+
+      <div class="card" id="calcScenariosCard" style="display:none">
+        <h2>Scenario Comparison</h2>
+        <div id="calcScenariosTable"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+</main>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════════
+const MONTHS = ['April','May','June','July','August','September','October','November','December','January','February','March'];
+const ALL_MONTHS_YEARS = []; // populated on init
+const MONTH_IDX = Object.fromEntries(MONTHS.map((m,i) => [m,i]));
+const FY_YEARS = [2024, 2025, 2026, 2027];
+
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+const S = {
+  config: {
+    categories: [],          // ["Ghee", "Oils", "Combo", ...]
+    skuMap: {},              // { sku: productName }
+    productCategory: {},     // { productName: categoryName }
+    combos: {},              // { sku: { name, components: [{product, qty}] } }
+    cogs: {},                // { "April-2025": { "Ghee 1L": 450 } }
+    adSpend: {},             // { "April-2025": 12500 }
+    supabase: {
+      url: 'https://rnaqfqcvirsqizpqupzp.supabase.co',
+      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJuYXFmcWN2aXJzcWl6cHF1cHpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwMzk3MzYsImV4cCI6MjA5NzYxNTczNn0.4DHuPKW-ecquikCSuodaZjwZGuYnnHUt38RORDMhJdg',
+    },
+  },
+  raw: {
+    mtr: [],        // normalized MTR rows
+    payment: [],    // normalized payment rows
+  },
+  recon: null,      // reconciliation result
+  pnl: null,        // pnl result
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// STORAGE
+// ═══════════════════════════════════════════════════════════════════
+let _syncTimer = null;
+function saveConfig() {
+  localStorage.setItem('girorganic_pnl_config', JSON.stringify(S.config));
+  if (S.config.supabase?.url && S.config.supabase?.anonKey) {
+    clearTimeout(_syncTimer);
+    _syncTimer = setTimeout(() => syncToCloud(), 2000);
+  }
+}
+function loadConfig() {
+  try {
+    const saved = localStorage.getItem('girorganic_pnl_config');
+    if (saved) Object.assign(S.config, JSON.parse(saved));
+  } catch(e) {}
+}
+
+// ── Raw data persistence (by month, so new months append cleanly) ──
+function saveRawData() {
+  try {
+    // Store as { mtr: { "April-2025": [...rows] }, payment: { "April-2025": [...rows] } }
+    const mtrByMonth = {};
+    for (const row of S.raw.mtr) {
+      const m = row._month || 'unknown';
+      if (!mtrByMonth[m]) mtrByMonth[m] = [];
+      mtrByMonth[m].push(row);
+    }
+    const payByMonth = {};
+    for (const row of S.raw.payment) {
+      const m = row._month || 'unknown';
+      if (!payByMonth[m]) payByMonth[m] = [];
+      payByMonth[m].push(row);
+    }
+    localStorage.setItem('girorganic_mtr_data', JSON.stringify(mtrByMonth));
+    localStorage.setItem('girorganic_pay_data', JSON.stringify(payByMonth));
+  } catch(e) {
+    // localStorage quota exceeded — data too large, skip silently
+    console.warn('Could not persist raw data to localStorage:', e.message);
+  }
+}
+function loadRawData() {
+  try {
+    const mtrRaw = localStorage.getItem('girorganic_mtr_data');
+    const payRaw = localStorage.getItem('girorganic_pay_data');
+    if (mtrRaw) {
+      const byMonth = JSON.parse(mtrRaw);
+      S.raw.mtr = Object.values(byMonth).flat();
+    }
+    if (payRaw) {
+      const byMonth = JSON.parse(payRaw);
+      S.raw.payment = Object.values(byMonth).flat();
+    }
+  } catch(e) {}
+}
+function clearRawData() {
+  S.raw.mtr = [];
+  S.raw.payment = [];
+  localStorage.removeItem('girorganic_mtr_data');
+  localStorage.removeItem('girorganic_pay_data');
+  renderUploadSummary();
+  updateHeaderStatus();
+  document.getElementById('mtrStatus').innerHTML = '';
+  document.getElementById('payStatus').innerHTML = '';
+  showAlert('All uploaded data cleared.', 'info');
+}
+
+// Merge new rows into existing, dedup by key fields
+function mergeMTRRows(newRows) {
+  const existing = new Map();
+  for (const r of S.raw.mtr) existing.set(r.orderId + '|' + r.sku + '|' + r._month, r);
+  for (const r of newRows) existing.set(r.orderId + '|' + r.sku + '|' + r._month, r);
+  S.raw.mtr = [...existing.values()];
+}
+function mergePayRows(newRows) {
+  const existing = new Map();
+  for (const r of S.raw.payment) existing.set(r.dateStr + '|' + r.settlementId + '|' + r.orderId + '|' + r.sku + '|' + r.type, r);
+  for (const r of newRows) existing.set(r.dateStr + '|' + r.settlementId + '|' + r.orderId + '|' + r.sku + '|' + r.type, r);
+  S.raw.payment = [...existing.values()];
+}
+function exportConfig() {
+  const blob = new Blob([JSON.stringify(S.config, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'girorganic_pnl_config.json';
+  a.click();
+}
+function triggerImport() { document.getElementById('importInput').click(); }
+function importConfig(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const cfg = JSON.parse(ev.target.result);
+      Object.assign(S.config, cfg);
+      saveConfig();
+      renderAll();
+      showAlert('Config imported successfully.', 'success');
+    } catch(err) {
+      showAlert('Invalid config file: ' + err.message, 'error');
+    }
+  };
+  r.readAsText(f);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DATE HELPERS
+// ═══════════════════════════════════════════════════════════════════
+function parseDate(s) {
+  if (!s) return null;
+  // Formats: "15 Apr 2025", "15-Apr-2025", "Apr 15, 2025", "2025-04-15", "15 Apr 2025 03:00:00 AM UTC"
+  const clean = s.toString().replace(' UTC','').replace('Sept','Sep').replace(/-/g,' ');
+  const d = new Date(clean);
+  return isNaN(d) ? null : d;
+}
+function monthYear(d) {
+  if (!d) return null;
+  const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${mn[d.getMonth()]}-${d.getFullYear()}`;
+}
+function monthYearLabel(my) {
+  // "April-2025" → "Apr 2025"
+  const [m, y] = my.split('-');
+  return m.substring(0,3) + ' ' + y;
+}
+
+// Ordered list of month-years for FY navigation
+function orderedMonthYears() {
+  const list = [];
+  for (const y of FY_YEARS) {
+    for (const m of MONTHS) {
+      list.push(`${m}-${y}`);
+    }
+  }
+  return list;
+}
+const ORDERED_MY = orderedMonthYears();
+
+function prevMonthYear(my) {
+  const idx = ORDERED_MY.indexOf(my);
+  return idx > 0 ? ORDERED_MY[idx - 1] : null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// NORMALIZE RAW DATA
+// ═══════════════════════════════════════════════════════════════════
+function normalizeMTRRow(row) {
+  const get = (...keys) => { for (const k of keys) { const v = row[k]; if (v !== undefined && v !== null && v.toString().trim() !== '') return v.toString().trim(); } return ''; };
+  const getNum = (...keys) => { const v = get(...keys); return parseFloat(v.replace(/,/g,'')) || 0; };
+  return {
+    orderId: get('Order Id','Order ID','order id','ORDER ID'),
+    orderDate: get('Order Date','Transaction Date','Date'),
+    txType: get('Transaction Type','Type','type'),
+    sku: get('SKU','Sku','sku'),
+    qty: Math.abs(getNum('Qty','Quantity','Quantity Purchased','qty')),
+    itemPrice: getNum('Item Price','Total price','Taxable Value','Invoice Amount','item price'),
+    description: get('Item Description','Product Name','Description'),
+    asin: get('ASIN','Asin','asin'),
+    _month: '',  // filled after
+  };
+}
+
+function normalizePayRow(row) {
+  const get = (...keys) => { for (const k of keys) { const v = row[k]; if (v !== undefined && v !== null && v.toString().trim() !== '') return v.toString().trim(); } return ''; };
+  const getNum = (...keys) => { const v = get(...keys); return parseFloat(v.toString().replace(/,/g,'')) || 0; };
+  return {
+    dateStr: get('date/time','Date/Time','Date'),
+    settlementId: get('settlement id','Settlement ID'),
+    type: get('type','Type'),
+    orderId: get('order id','Order Id','Order ID'),
+    sku: get('Sku','SKU','sku'),
+    qty: getNum('quantity','Quantity'),
+    productSales: getNum('product sales'),
+    shippingCredits: getNum('shipping credits'),
+    promoRebates: getNum('promotional rebates'),
+    sellingFees: getNum('selling fees'),
+    fbaFees: getNum('fba fees'),
+    otherTxnFees: getNum('other transaction fees'),
+    other: getNum('other'),
+    total: getNum('total'),
+    _month: '',  // filled after
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CSV PARSING
+// ═══════════════════════════════════════════════════════════════════
+function parseMTRCSV(text, filename) {
+  const result = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false });
+  return result.data.map(r => {
+    const n = normalizeMTRRow(r);
+    const d = parseDate(n.orderDate);
+    n._month = d ? monthYear(d) : '';
+    return n;
+  }).filter(r => r.orderId);
+}
+
+function parsePaymentCSV(text) {
+  // Find the header row (skip Amazon's preamble - up to ~15 rows)
+  const lines = text.split('\n');
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(20, lines.length); i++) {
+    const l = lines[i].toLowerCase();
+    // Must be the actual header row: starts with "date/time" AND has settlement id AND order id
+    // This avoids matching the preamble line "Date/Time: Posted date/time of the transaction"
+    const isHeader = l.includes('settlement id') && l.includes('order id') && l.includes('selling fees');
+    if (isHeader) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) headerIdx = 0; // fallback: no preamble
+  const cleanText = lines.slice(headerIdx).join('\n');
+  const result = Papa.parse(cleanText, { header: true, skipEmptyLines: true, dynamicTyping: false });
+  return result.data.map(r => {
+    const n = normalizePayRow(r);
+    const d = parseDate(n.dateStr);
+    n._month = d ? monthYear(d) : '';
+    return n;
+  }).filter(r => r.type && r.type !== 'Transfer');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FILE UPLOAD HANDLERS
+// ═══════════════════════════════════════════════════════════════════
+function handleMTRUpload(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  let loaded = 0;
+  const newRows = [];
+  files.forEach(f => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      newRows.push(...parseMTRCSV(ev.target.result, f.name));
+      loaded++;
+      if (loaded === files.length) {
+        mergeMTRRows(newRows);
+        saveRawData();
+        syncToCloud();
+        renderMTRStatus(files, newRows.length);
+        updateUnmappedSkus();
+        renderUploadSummary();
+        updateHeaderStatus();
+        fillReconMonthFilter();
+        fillPnLMonthFilter();
+      }
+    };
+    reader.readAsText(f);
+  });
+}
+
+function handlePayUpload(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  let loaded = 0;
+  const newRows = [];
+  files.forEach(f => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      newRows.push(...parsePaymentCSV(ev.target.result));
+      loaded++;
+      if (loaded === files.length) {
+        mergePayRows(newRows);
+        saveRawData();
+        syncToCloud();
+        renderPayStatus(files, newRows.length);
+        renderUploadSummary();
+        updateHeaderStatus();
+        fillReconMonthFilter();
+        fillPnLMonthFilter();
+      }
+    };
+    reader.readAsText(f);
+  });
+}
+
+function renderMTRStatus(files, newCount) {
+  const months = [...new Set(S.raw.mtr.map(r => r._month).filter(Boolean))].sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
+  document.getElementById('mtrStatus').innerHTML = `
+    <div class="alert success">
+      ✅ Added <strong>${newCount}</strong> new rows from <strong>${files.length}</strong> file(s) · <strong>${S.raw.mtr.length.toLocaleString()}</strong> total MTR rows in memory<br>
+      All months: ${months.map(m => `<span class="chip">${m}</span>`).join('')}
+    </div>`;
+}
+
+function renderPayStatus(files, newCount) {
+  const months = [...new Set(S.raw.payment.map(r => r._month).filter(Boolean))].sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
+  const orderRows = S.raw.payment.filter(r => r.type === 'Order').length;
+  document.getElementById('payStatus').innerHTML = `
+    <div class="alert success">
+      ✅ Added <strong>${newCount}</strong> new rows from <strong>${files.length}</strong> file(s) · <strong>${S.raw.payment.length.toLocaleString()}</strong> total rows · <strong>${orderRows}</strong> Order rows<br>
+      All months: ${months.map(m => `<span class="chip">${m}</span>`).join('')}
+    </div>`;
+}
+
+function renderUploadSummary() {
+  const card = document.getElementById('uploadSummaryCard');
+  const div = document.getElementById('uploadSummary');
+  if (!S.raw.mtr.length && !S.raw.payment.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  const mtrMonths = [...new Set(S.raw.mtr.map(r => r._month).filter(Boolean))];
+  const payMonths = [...new Set(S.raw.payment.map(r => r._month).filter(Boolean))];
+  const allMonths = [...new Set([...mtrMonths, ...payMonths])].sort();
+
+  let html = '<div class="stat-cards">';
+  html += `<div class="stat"><div class="label">MTR Rows</div><div class="value">${S.raw.mtr.length.toLocaleString()}</div><div class="sub">${mtrMonths.length} months</div></div>`;
+  html += `<div class="stat"><div class="label">Payment Rows</div><div class="value">${S.raw.payment.length.toLocaleString()}</div><div class="sub">${payMonths.length} months</div></div>`;
+  const orderIds = new Set(S.raw.mtr.filter(r => r.txType.toLowerCase() !== 'cancel').map(r => r.orderId));
+  html += `<div class="stat"><div class="label">Unique Orders (MTR)</div><div class="value">${orderIds.size.toLocaleString()}</div></div>`;
+  const payOrderIds = new Set(S.raw.payment.filter(r => r.type === 'Order').map(r => r.orderId));
+  html += `<div class="stat"><div class="label">Settled Orders</div><div class="value">${payOrderIds.size.toLocaleString()}</div></div>`;
+  html += '</div>';
+  div.innerHTML = html;
+}
+
+function updateHeaderStatus() {
+  const mtr = S.raw.mtr.length;
+  const pay = S.raw.payment.length;
+  const el = document.getElementById('hDataStatus');
+  if (!mtr && !pay) el.textContent = 'No data loaded';
+  else el.textContent = `MTR: ${mtr.toLocaleString()} rows · Payment: ${pay.toLocaleString()} rows`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AD SPEND
+// ═══════════════════════════════════════════════════════════════════
+function renderAdSpendTable() {
+  const div = document.getElementById('adSpendTable');
+  const entries = Object.entries(S.config.adSpend).sort((a,b) => ORDERED_MY.indexOf(a[0]) - ORDERED_MY.indexOf(b[0]));
+  let html = '<div class="tbl-wrap"><table><thead><tr><th>Month</th><th class="r">Ad Spend incl. GST (₹)</th><th></th></tr></thead><tbody>';
+  for (const [my, amt] of entries) {
+    html += `<tr>
+      <td>${my}</td>
+      <td class="r"><input type="number" step="0.01" value="${amt}" onchange="S.config.adSpend['${my}']=parseFloat(this.value)||0;saveConfig()" style="width:140px;text-align:right"></td>
+      <td><button class="btn danger small" onclick="deleteAdSpend('${my}')">✕</button></td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  div.innerHTML = html;
+}
+
+function addAdSpendRow() {
+  const my = prompt('Enter month (e.g. April-2025):');
+  if (!my) return;
+  if (!ORDERED_MY.includes(my)) { alert('Invalid month. Use format: April-2025'); return; }
+  S.config.adSpend[my] = S.config.adSpend[my] || 0;
+  saveConfig();
+  renderAdSpendTable();
+}
+
+function deleteAdSpend(my) {
+  delete S.config.adSpend[my];
+  saveConfig();
+  renderAdSpendTable();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CATEGORIES
+// ═══════════════════════════════════════════════════════════════════
+function addCategory() {
+  const name = document.getElementById('newCatName').value.trim();
+  if (!name) return;
+  if (name.toLowerCase() === 'combo') { showAlert('"Combo" is built-in — no need to add it.', 'warn'); return; }
+  if (S.config.categories.includes(name)) { showAlert('Category already exists.', 'warn'); return; }
+  S.config.categories.push(name);
+  saveConfig();
+  document.getElementById('newCatName').value = '';
+  renderCategoryChips();
+  refreshCategoryDropdowns();
+}
+
+function deleteCategory(name) {
+  S.config.categories = S.config.categories.filter(c => c !== name);
+  // clear from any products using it
+  for (const p of Object.keys(S.config.productCategory)) {
+    if (S.config.productCategory[p] === name) delete S.config.productCategory[p];
+  }
+  saveConfig();
+  renderCategoryChips();
+  refreshCategoryDropdowns();
+  renderSkuMapTable();
+}
+
+function renderCategoryChips() {
+  const div = document.getElementById('categoryChips');
+  if (!div) return;
+  let html = '<span class="chip" style="background:#e8f0ee;color:var(--teal);border-color:var(--teal)">Combo (built-in)</span>';
+  for (const cat of S.config.categories) {
+    html += `<span class="chip removable" onclick="deleteCategory('${cat.replace(/'/g,"\\'")}'); event.stopPropagation()" title="Click to delete">${cat} ✕</span>`;
+  }
+  div.innerHTML = html;
+}
+
+function refreshCategoryDropdowns() {
+  // SKU mapping dropdown
+  const sel = document.getElementById('newSkuCategory');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— select —</option>' + S.config.categories.map(c => `<option value="${c}">${c}</option>`).join('');
+    if (cur) sel.value = cur;
+  }
+  // P&L category filter
+  const pnlSel = document.getElementById('pnlCatFilter');
+  if (pnlSel) {
+    const cur2 = pnlSel.value;
+    const allCats = ['Combo', ...S.config.categories];
+    pnlSel.innerHTML = '<option value="">All Categories</option>' + allCats.map(c => `<option value="${c}">${c}</option>`).join('');
+    if (cur2) pnlSel.value = cur2;
+  }
+}
+
+function getProductCategory(productName) {
+  // Combo products have category "Combo"
+  // Check if any combo uses this product as a component — no, category is at product level
+  return S.config.productCategory[productName] || '';
+}
+
+function getSkuCategory(sku) {
+  if (S.config.combos[sku]) return 'Combo';
+  const prod = S.config.skuMap[sku];
+  return prod ? (S.config.productCategory[prod] || '') : '';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SKU MAP
+// ═══════════════════════════════════════════════════════════════════
+function addSkuMap() {
+  const sku = document.getElementById('newSku').value.trim();
+  const prod = document.getElementById('newSkuProduct').value.trim();
+  const cat = document.getElementById('newSkuCategory')?.value || '';
+  if (!sku || !prod) { showAlert('Enter both SKU and product name.', 'warn'); return; }
+  S.config.skuMap[sku] = prod;
+  if (cat) S.config.productCategory[prod] = cat;
+  saveConfig();
+  document.getElementById('newSku').value = '';
+  document.getElementById('newSkuProduct').value = '';
+  renderSkuMapTable();
+  updateUnmappedSkus();
+}
+
+function deleteSkuMap(sku) {
+  delete S.config.skuMap[sku];
+  saveConfig();
+  renderSkuMapTable();
+  updateUnmappedSkus();
+}
+
+function updateSkuCategory(sku, cat) {
+  const prod = S.config.skuMap[sku];
+  if (prod) { S.config.productCategory[prod] = cat; saveConfig(); }
+}
+
+function renderSkuMapTable() {
+  const wrap = document.getElementById('skuMapTableWrap');
+  const entries = Object.entries(S.config.skuMap);
+  if (!entries.length) { wrap.innerHTML = '<div class="empty">No SKU mappings yet. Add categories first, then map SKUs above.</div>'; return; }
+  const catOptions = ['', ...S.config.categories].map(c => `<option value="${c}">${c || '— category —'}</option>`).join('');
+  let html = '<table><thead><tr><th>Amazon SKU</th><th>Product Name</th><th>Category</th><th></th></tr></thead><tbody>';
+  for (const [sku, prod] of entries) {
+    const isCombo = !!S.config.combos[sku];
+    const cat = isCombo ? 'Combo' : (S.config.productCategory[prod] || '');
+    html += `<tr>
+      <td><code>${sku}</code> ${isCombo ? '<span class="badge blue">combo</span>' : ''}</td>
+      <td>${prod}</td>
+      <td>${isCombo
+        ? '<span class="badge blue">Combo</span>'
+        : `<select onchange="updateSkuCategory('${sku}',this.value)" style="font-size:12px;padding:3px 6px">${catOptions.replace(`value="${cat}"`,`value="${cat}" selected`)}</select>`
+      }</td>
+      <td><button class="btn danger small" onclick="deleteSkuMap('${sku}')">✕</button></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function updateUnmappedSkus() {
+  const allSkus = new Set([
+    ...S.raw.mtr.map(r => r.sku),
+    ...S.raw.payment.filter(r => r.sku).map(r => r.sku),
+  ].filter(Boolean));
+  const unmapped = [...allSkus].filter(s => !S.config.skuMap[s] && !S.config.combos[s]);
+  const el = document.getElementById('unmappedSkus');
+  if (!el) return;
+  if (unmapped.length === 0) { el.textContent = 'None ✅'; el.style.color = 'var(--pos)'; }
+  else { el.textContent = unmapped.slice(0,8).join(', ') + (unmapped.length > 8 ? ` …+${unmapped.length-8} more` : ''); el.style.color = 'var(--warn)'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COMBOS
+// ═══════════════════════════════════════════════════════════════════
+function addCombo() {
+  const sku = document.getElementById('newComboSku').value.trim();
+  const name = document.getElementById('newComboName').value.trim();
+  if (!sku || !name) { showAlert('Enter combo SKU and name.', 'warn'); return; }
+  S.config.combos[sku] = S.config.combos[sku] || { name, components: [] };
+  S.config.combos[sku].name = name;
+  if (!S.config.skuMap[sku]) S.config.skuMap[sku] = name;
+  // auto-assign Combo category to the combo SKU's product name
+  S.config.productCategory[name] = 'Combo';
+  saveConfig();
+  document.getElementById('newComboSku').value = '';
+  document.getElementById('newComboName').value = '';
+  renderComboList();
+  renderSkuMapTable();
+}
+
+function addComboComponent(comboSku) {
+  const prod = prompt('Product name (must match SKU Map product name):');
+  if (!prod) return;
+  const qty = parseFloat(prompt('Quantity per combo unit:', '1'));
+  if (isNaN(qty) || qty <= 0) return;
+  S.config.combos[comboSku].components.push({ product: prod, qty });
+  saveConfig();
+  renderComboList();
+}
+
+function removeComboComponent(comboSku, idx) {
+  S.config.combos[comboSku].components.splice(idx, 1);
+  saveConfig();
+  renderComboList();
+}
+
+function deleteCombo(sku) {
+  delete S.config.combos[sku];
+  saveConfig();
+  renderComboList();
+  renderSkuMapTable();
+}
+
+function renderComboList() {
+  const div = document.getElementById('comboList');
+  const combos = Object.entries(S.config.combos);
+  if (!combos.length) { div.innerHTML = '<div class="empty">No combos defined yet.</div>'; return; }
+  let html = '';
+  for (const [sku, combo] of combos) {
+    html += `<div class="card" style="margin-bottom:10px;padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div><strong>${combo.name}</strong> <code style="font-size:11px;background:#eee;padding:2px 6px;border-radius:4px">${sku}</code></div>
+        <button class="btn danger small" onclick="deleteCombo('${sku}')">Delete</button>
+      </div>
+      <div class="combo-components">
+        ${combo.components.map((c,i) => `
+          <span class="chip removable" onclick="removeComboComponent('${sku}',${i})" title="Click to remove">
+            ${c.qty}× ${c.product} ✕
+          </span>`).join('')}
+        <button class="btn secondary small" onclick="addComboComponent('${sku}')">+ Component</button>
+      </div>`;
+    if (!combo.components.length) html += `<p class="help" style="margin-top:6px">⚠ No components defined. Click "+ Component" to add what this combo contains.</p>`;
+    html += '</div>';
+  }
+  div.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COGS TAB
+// ═══════════════════════════════════════════════════════════════════
+function populateCogsSelects() {
+  const mSel = document.getElementById('cogsMonthSel');
+  const ySel = document.getElementById('cogsYearSel');
+  mSel.innerHTML = MONTHS.map(m => `<option value="${m}">${m}</option>`).join('');
+  ySel.innerHTML = FY_YEARS.map(y => `<option value="${y}">${y}</option>`).join('');
+  // Default to current month
+  const now = new Date();
+  const curMonth = now.toLocaleString('en',{month:'long'});
+  if (MONTHS.includes(curMonth)) mSel.value = curMonth;
+  ySel.value = now.getFullYear();
+}
+
+function getSelectedMonthYear() {
+  const m = document.getElementById('cogsMonthSel').value;
+  const y = document.getElementById('cogsYearSel').value;
+  return `${m}-${y}`;
+}
+
+function isAsin(s) { return /^B[A-Z0-9]{9}$/.test((s||'').trim()); }
+
+function getComboProductNames() {
+  return new Set(Object.values(S.config.combos).map(c => c.name));
+}
+
+function getAllProducts() {
+  const products = new Set();
+  const comboNames = getComboProductNames();
+  // skuMap values — skip ASINs and combo product names
+  Object.values(S.config.skuMap).forEach(p => {
+    if (!isAsin(p) && !comboNames.has(p)) products.add(p);
+  });
+  // combo components (already product names after fix)
+  Object.values(S.config.combos).forEach(c => c.components.forEach(comp => {
+    if (!isAsin(comp.product)) products.add(comp.product);
+  }));
+  // existing COGS entries
+  Object.values(S.config.cogs).forEach(m => Object.keys(m).forEach(p => {
+    if (!isAsin(p) && !comboNames.has(p)) products.add(p);
+  }));
+  return [...products].sort();
+}
+
+function getInheritedCogs(product, monthYear) {
+  // Find the nearest previous month that has COGS for this product
+  const idx = ORDERED_MY.indexOf(monthYear);
+  if (idx < 0) return { value: null, from: null };
+  for (let i = idx - 1; i >= 0; i--) {
+    const my = ORDERED_MY[i];
+    if (S.config.cogs[my]?.[product] !== undefined) {
+      return { value: S.config.cogs[my][product], from: my };
+    }
+  }
+  return { value: null, from: null };
+}
+
+function getCogsForMonth(monthYear) {
+  // Returns { product: cogsValue } using nearest-month logic
+  const products = getAllProducts();
+  const result = {};
+  for (const p of products) {
+    const direct = S.config.cogs[monthYear]?.[p];
+    if (direct !== undefined) { result[p] = direct; continue; }
+    const inherited = getInheritedCogs(p, monthYear);
+    if (inherited.value !== null) result[p] = inherited.value;
+  }
+  return result;
+}
+
+function renderCogsTab() {
+  const my = getSelectedMonthYear();
+  const allProducts = getAllProducts();
+  const wrap = document.getElementById('cogsTableWrap');
+  const catFilter = (document.getElementById('cogsCatFilter')?.value || '').toLowerCase();
+  const search = (document.getElementById('cogsSearch')?.value || '').toLowerCase().trim();
+
+  // Populate category dropdown
+  const catSel = document.getElementById('cogsCatFilter');
+  if (catSel) {
+    const cur = catSel.value;
+    const allCats = ['Combo', ...S.config.categories];
+    catSel.innerHTML = '<option value="">All Categories</option>' +
+      allCats.map(c => `<option value="${c}">${c}</option>`).join('');
+    catSel.value = cur;
+  }
+
+  // Apply filters
+  const products = allProducts.filter(p => {
+    const cat = (S.config.productCategory[p] || '').toLowerCase();
+    const matchCat = !catFilter || cat === catFilter;
+    const matchSearch = !search || p.toLowerCase().includes(search);
+    return matchCat && matchSearch;
+  });
+
+  if (!allProducts.length) {
+    wrap.innerHTML = '<div class="alert info">Add products via SKU Mapping tab first, then come back to enter COGS.</div>';
+    return;
+  }
+
+  const cogsMap = getCogsForMonth(my);
+  const filterActive = catFilter || search;
+
+  let html = `<div class="tbl-wrap"><table class="cogs-table">
+    <thead><tr><th>Product</th><th>Category</th><th class="r">COGS per Unit (₹) for ${my}</th><th class="r">Note</th></tr></thead><tbody>`;
+
+  if (!products.length && filterActive) {
+    html += `<tr><td colspan="4" class="empty" style="padding:24px">No products match the filter.</td></tr>`;
+  }
+
+  // Regular products — editable
+  for (const p of products) {
+    const direct = S.config.cogs[my]?.[p];
+    const inherited = getInheritedCogs(p, my);
+    const displayVal = direct !== undefined ? direct : (inherited.value || '');
+    const isInherited = direct === undefined && inherited.value !== null;
+    const cat = S.config.productCategory[p] || '';
+    html += `<tr>
+      <td>${p}</td>
+      <td>${cat ? `<span class="badge green">${cat}</span>` : '<span class="badge grey">—</span>'}</td>
+      <td class="r"><input type="number" step="0.01" min="0" id="cogs_${CSS.escape(p)}"
+        value="${displayVal}"
+        placeholder="${isInherited ? inherited.value : ''}"
+        style="width:130px;text-align:right;${isInherited ? 'border-color:#ccc;color:var(--muted)' : ''}"></td>
+      <td class="r inherited">${isInherited ? `${inherited.from} (₹${inherited.value})` : (direct !== undefined ? '<span style="color:var(--pos)">✓ Set</span>' : '—')}</td>
+    </tr>`;
+  }
+
+  // Combos — auto-calculated (only show if no search/cat filter, or filter matches "Combo")
+  const showCombos = !catFilter || catFilter.toLowerCase() === 'combo';
+  const combos = Object.values(S.config.combos).filter(c =>
+    !search || c.name.toLowerCase().includes(search)
+  );
+  if (showCombos && combos.length) {
+    html += `<tr style="background:#eef2ff"><td colspan="4" style="font-weight:700;color:#4338ca;padding:8px 10px">
+      🔗 Combo Products — COGS auto-calculated from components (no entry needed)
+    </td></tr>`;
+    for (const combo of combos) {
+      const totalCogs = combo.components.reduce((sum, c) => sum + (cogsMap[c.product] || 0) * c.qty, 0);
+      const breakdown = combo.components.map(c =>
+        `${c.qty}× ${c.product} (₹${cogsMap[c.product] || '?'})`
+      ).join(' + ');
+      html += `<tr style="background:#f5f3ff">
+        <td>${combo.name} <span class="badge blue">combo</span></td>
+        <td><span class="badge blue">Combo</span></td>
+        <td class="r" style="color:#4338ca;font-weight:700">₹${totalCogs.toFixed(0)}</td>
+        <td class="r inherited">${breakdown}</td>
+      </tr>`;
+    }
+  }
+
+  html += '</tbody></table></div>';
+  wrap.innerHTML = html;
+}
+
+function saveCogsForMonth() {
+  const my = getSelectedMonthYear();
+  const products = getAllProducts();
+  if (!S.config.cogs[my]) S.config.cogs[my] = {};
+  let saved = 0;
+  for (const p of products) {
+    const input = document.getElementById(`cogs_${CSS.escape(p)}`);
+    if (!input) continue;
+    const v = parseFloat(input.value);
+    if (!isNaN(v) && v > 0) {
+      S.config.cogs[my][p] = v;
+      saved++;
+    }
+  }
+  saveConfig();
+  renderCogsTab();
+  showAlert(`Saved COGS for ${my} (${saved} products).`, 'success');
+}
+
+function copyCogsFromPrev() {
+  const my = getSelectedMonthYear();
+  const prev = prevMonthYear(my);
+  if (!prev) { showAlert('No previous month available.', 'warn'); return; }
+  const products = getAllProducts();
+  if (!S.config.cogs[my]) S.config.cogs[my] = {};
+  let copied = 0;
+  for (const p of products) {
+    const cogsData = getCogsForMonth(prev);
+    if (cogsData[p] !== undefined && S.config.cogs[my][p] === undefined) {
+      S.config.cogs[my][p] = cogsData[p];
+      copied++;
+    }
+  }
+  saveConfig();
+  renderCogsTab();
+  showAlert(`Copied ${copied} COGS values from ${prev}.`, 'success');
+}
+
+function addCogsProduct() {
+  const name = prompt('Product name to add:');
+  if (!name) return;
+  // Add to skuMap with same name (so it appears in products list)
+  if (!getAllProducts().includes(name)) {
+    S.config.skuMap[`_custom_${name}`] = name;
+    saveConfig();
+    renderCogsTab();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RECONCILIATION ENGINE
+// ═══════════════════════════════════════════════════════════════════
+function runReconciliation() {
+  if (!S.raw.mtr.length) { S.recon = null; return; }
+
+  // Build map of all orders from MTR (shipments only, not cancels)
+  const mtrOrders = new Map(); // orderId → { orderId, month, items: [{sku,qty,price}] }
+  for (const row of S.raw.mtr) {
+    const type = row.txType.toLowerCase();
+    if (type === 'cancel') continue;
+    if (!row.orderId) continue;
+    if (!mtrOrders.has(row.orderId)) {
+      mtrOrders.set(row.orderId, { orderId: row.orderId, month: row._month, txType: row.txType, items: [] });
+    }
+    mtrOrders.get(row.orderId).items.push({ sku: row.sku, qty: row.qty, price: row.itemPrice, desc: row.description });
+  }
+
+  // Build set of order IDs from payment report
+  const payOrderIds = new Set(
+    S.raw.payment.filter(r => r.type === 'Order' || r.type === 'Refund').map(r => r.orderId).filter(Boolean)
+  );
+
+  // Also track which month payment was received
+  const payOrderMonth = {};
+  for (const r of S.raw.payment) {
+    if ((r.type === 'Order' || r.type === 'Refund') && r.orderId && r._month) {
+      payOrderMonth[r.orderId] = r._month;
+    }
+  }
+
+  const matched = [], unmatched = [];
+  for (const [oid, order] of mtrOrders) {
+    if (payOrderIds.has(oid)) {
+      matched.push({ ...order, settledMonth: payOrderMonth[oid] || '?' });
+    } else {
+      unmatched.push(order);
+    }
+  }
+
+  S.recon = { total: mtrOrders.size, matched, unmatched, matchRate: mtrOrders.size > 0 ? (matched.length / mtrOrders.size * 100) : 100 };
+}
+
+// ── FY HELPERS ──
+function getSelectedFY() {
+  return document.getElementById('fySelector')?.value || 'FY2025-26';
+}
+
+function getFYMonths(fy) {
+  // fy = "FY2025-26" → Apr-2025 … Mar-2026
+  const match = fy.match(/FY(\d{4})-(\d{2})/);
+  if (!match) return [];
+  const startYear = parseInt(match[1]);
+  return [
+    `April-${startYear}`, `May-${startYear}`, `June-${startYear}`,
+    `July-${startYear}`, `August-${startYear}`, `September-${startYear}`,
+    `October-${startYear}`, `November-${startYear}`, `December-${startYear}`,
+    `January-${startYear+1}`, `February-${startYear+1}`, `March-${startYear+1}`
+  ];
+}
+
+function onFYChange() {
+  fillReconMonthFilter();
+  fillPnLMonthFilter();
+  // Update COGS year default to match FY start year
+  const fy = getSelectedFY();
+  const m = fy.match(/FY(\d{4})/);
+  if (m) {
+    const ySel = document.getElementById('cogsYearSel');
+    if (ySel) ySel.value = m[1];
+    renderCogsTab();
+  }
+  if (S.pnl) renderPnLTab();
+  if (S.recon) renderReconTab();
+}
+
+function fillReconMonthFilter() {
+  const sel = document.getElementById('reconMonthFilter');
+  const fyMonths = new Set(getFYMonths(getSelectedFY()));
+  const months = [...new Set(S.raw.mtr.map(r => r._month).filter(Boolean))]
+    .filter(m => fyMonths.has(m))
+    .sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
+  sel.innerHTML = '<option value="">All Months (FY)</option>' + months.map(m => `<option value="${m}">${m}</option>`).join('');
+}
+
+function renderReconTab() {
+  const div = document.getElementById('reconContent');
+  if (!S.recon) { div.innerHTML = '<div class="empty">Upload MTR + payment data, then click Run Reconciliation.</div>'; return; }
+
+  const filter = document.getElementById('reconMonthFilter').value;
+  const { total, matched, unmatched, matchRate } = S.recon;
+
+  const fMatched = filter ? matched.filter(r => r.month === filter) : matched;
+  const fUnmatched = filter ? unmatched.filter(r => r.month === filter) : unmatched;
+  const fTotal = fMatched.length + fUnmatched.length;
+
+  const rateColor = matchRate >= 95 ? 'var(--pos)' : matchRate >= 80 ? 'var(--warn)' : 'var(--neg)';
+
+  let html = `<div class="stat-cards">
+    <div class="stat"><div class="label">MTR Orders${filter ? ` (${filter})` : ''}</div><div class="value">${fTotal.toLocaleString()}</div></div>
+    <div class="stat"><div class="label">Payment Received</div><div class="value pos">${fMatched.length.toLocaleString()}</div></div>
+    <div class="stat"><div class="label">⚠ Not Received</div><div class="value ${fUnmatched.length > 0 ? 'warn' : 'pos'}">${fUnmatched.length.toLocaleString()}</div></div>
+    <div class="stat"><div class="label">Match Rate</div><div class="value" style="color:${rateColor}">${fTotal > 0 ? ((fMatched.length/fTotal)*100).toFixed(1) : 100}%</div>
+      <div class="progress"><div class="progress-fill${matchRate < 80 ? ' red' : matchRate < 95 ? ' warn' : ''}" style="width:${fTotal > 0 ? (fMatched.length/fTotal*100) : 100}%"></div></div>
+    </div>
+  </div>`;
+
+  if (fUnmatched.length > 0) {
+    html += `<div class="card">
+      <h2>⚠ Orders in MTR with NO Payment Received (${fUnmatched.length})</h2>
+      <p class="help" style="margin-bottom:10px">These order IDs appear in your MTR report but have no matching row in the payment/settlement report. This could mean: payment will arrive in a future settlement period, the payment report doesn't cover the full date range, or there is a genuine issue. <strong>These orders are still included in P&L calculations (using MTR revenue as estimate) but are flagged.</strong></p>
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr><th>Order ID</th><th>MTR Month</th><th>Type</th><th>SKUs</th><th class="r">Est. Revenue (₹)</th></tr></thead>
+          <tbody>`;
+    for (const o of fUnmatched) {
+      const rev = o.items.reduce((s,i) => s + i.price, 0);
+      const skus = [...new Set(o.items.map(i => i.sku))].join(', ');
+      html += `<tr class="flagged"><td><code>${o.orderId}</code></td><td>${o.month}</td><td>${o.txType}</td><td>${skus}</td><td class="r">₹${fmt(rev)}</td></tr>`;
+    }
+    html += '</tbody></table></div></div>';
+  } else {
+    html += `<div class="alert success">✅ All ${fTotal} orders have matching payment records${filter ? ` for ${filter}` : ''}.</div>`;
+  }
+
+  if (fMatched.length > 0) {
+    // Cross-month payments summary
+    const crossMonth = fMatched.filter(r => r.month !== r.settledMonth);
+    if (crossMonth.length > 0) {
+      html += `<div class="card">
+        <h2>ℹ Cross-Month Settlements (${crossMonth.length} orders)</h2>
+        <p class="help" style="margin-bottom:10px">These orders shipped in one month but payment was received in a different month (normal for Amazon's 7-14 day settlement cycle).</p>
+        <div class="tbl-wrap tbl-scroll"><table>
+          <thead><tr><th>Order ID</th><th>Shipped Month</th><th>Settled Month</th><th>SKUs</th></tr></thead>
+          <tbody>`;
+      for (const o of crossMonth.slice(0, 100)) {
+        const skus = [...new Set(o.items.map(i => i.sku))].join(', ');
+        html += `<tr><td><code>${o.orderId}</code></td><td>${o.month}</td><td>${o.settledMonth}</td><td>${skus}</td></tr>`;
+      }
+      if (crossMonth.length > 100) html += `<tr><td colspan="4" class="r" style="color:var(--muted)">…and ${crossMonth.length - 100} more</td></tr>`;
+      html += '</tbody></table></div></div>';
+    }
+  }
+
+  div.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// P&L ENGINE
+// ═══════════════════════════════════════════════════════════════════
+function expandSKU(sku, qty, productSales, sellingFees, fbaFees, otherTxnFees, promoRebates, shippingCredits, total, cogsMap) {
+  // Returns array of { product, units, revShare } where revShare sums to 1
+  const combo = S.config.combos[sku];
+  if (combo && combo.components.length > 0) {
+    // Prorate by COGS ratio (or equal if no COGS)
+    const comps = combo.components;
+    const cogsTotals = comps.map(c => (cogsMap[c.product] || 0) * c.qty);
+    const totalCogs = cogsTotals.reduce((a,b) => a+b, 0);
+    return comps.map((c, i) => ({
+      product: c.product,
+      units: c.qty * qty,
+      revShare: totalCogs > 0 ? cogsTotals[i] / totalCogs : 1 / comps.length,
+      isCombo: true,
+      comboSku: sku,
+    }));
+  }
+  const product = S.config.skuMap[sku] || sku;
+  return [{ product, units: qty, revShare: 1, isCombo: false }];
+}
+
+function buildPnL() {
+  if (!S.raw.payment.length) { S.pnl = null; return; }
+
+  const byMonth = {}; // monthYear → { products: {name: {...}}, storage, otherAdj }
+
+  // Get set of unmatched order IDs from recon (to flag)
+  const unmatchedIds = new Set((S.recon?.unmatched || []).map(r => r.orderId));
+
+  for (const row of S.raw.payment) {
+    if (!row._month || row.type === 'Transfer') continue;
+    const my = row._month;
+    if (!byMonth[my]) byMonth[my] = { products: {}, storage: 0, otherAdj: 0, skuRaw: {} };
+
+    if (row.type === 'FBA Inventory Fee') {
+      byMonth[my].storage += row.total;
+      continue;
+    }
+    if (row.type !== 'Order' && row.type !== 'Refund') {
+      byMonth[my].otherAdj += row.total;
+      continue;
+    }
+
+    const cogsMap = getCogsForMonth(my);
+    const expansion = expandSKU(row.sku, row.qty, row.productSales, row.sellingFees, row.fbaFees, row.otherTxnFees, row.promoRebates, row.shippingCredits, row.total, cogsMap);
+
+    for (const exp of expansion) {
+      const p = exp.product;
+      if (!byMonth[my].products[p]) {
+        byMonth[my].products[p] = { units: 0, productSales: 0, promoRebates: 0, shippingCredits: 0, sellingFees: 0, fbaFees: 0, otherTxnFees: 0, total: 0, cogs: 0, flaggedRevenue: 0, flaggedUnits: 0 };
+      }
+      const pm = byMonth[my].products[p];
+      const flagged = unmatchedIds.has(row.orderId);
+      pm.units += exp.units;
+      pm.productSales += row.productSales * exp.revShare;
+      pm.promoRebates += row.promoRebates * exp.revShare;
+      pm.shippingCredits += row.shippingCredits * exp.revShare;
+      pm.sellingFees += row.sellingFees * exp.revShare;
+      pm.fbaFees += row.fbaFees * exp.revShare;
+      pm.otherTxnFees += row.otherTxnFees * exp.revShare;
+      pm.total += row.total * exp.revShare;
+      pm.cogs += (cogsMap[p] || 0) * exp.units;
+      if (flagged) { pm.flaggedRevenue += row.productSales * exp.revShare; pm.flaggedUnits += exp.units; }
+    }
+
+    // Also track raw SKU-level data
+    if (!byMonth[my].skuRaw[row.sku]) byMonth[my].skuRaw[row.sku] = { units:0, productSales:0, sellingFees:0, fbaFees:0, cogs:0 };
+    const sr = byMonth[my].skuRaw[row.sku];
+    sr.units += row.qty;
+    sr.productSales += row.productSales;
+    sr.sellingFees += row.sellingFees;
+    sr.fbaFees += row.fbaFees;
+    const cogsMap2 = getCogsForMonth(my);
+    const prod = S.config.skuMap[row.sku] || row.sku;
+    sr.cogs += (cogsMap2[prod] || 0) * row.qty;
+  }
+
+  // Add unmatched MTR orders as estimated revenue (no fees data)
+  for (const order of (S.recon?.unmatched || [])) {
+    if (!order._month && !order.month) continue;
+    const my = order.month || order._month;
+    if (!byMonth[my]) byMonth[my] = { products: {}, storage: 0, otherAdj: 0, skuRaw: {} };
+    const cogsMap = getCogsForMonth(my);
+    for (const item of order.items) {
+      const expansion = expandSKU(item.sku, item.qty, item.price, 0, 0, 0, 0, 0, item.price, cogsMap);
+      for (const exp of expansion) {
+        const p = exp.product;
+        if (!byMonth[my].products[p]) {
+          byMonth[my].products[p] = { units:0, productSales:0, promoRebates:0, shippingCredits:0, sellingFees:0, fbaFees:0, otherTxnFees:0, total:0, cogs:0, flaggedRevenue:0, flaggedUnits:0 };
+        }
+        const pm = byMonth[my].products[p];
+        pm.units += exp.units;
+        pm.productSales += item.price * exp.revShare;
+        pm.flaggedRevenue += item.price * exp.revShare;
+        pm.flaggedUnits += exp.units;
+        pm.cogs += (cogsMap[p] || 0) * exp.units;
+      }
+    }
+  }
+
+  S.pnl = byMonth;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// P&L RENDERING
+// ═══════════════════════════════════════════════════════════════════
+function fillPnLMonthFilter() {
+  const sel = document.getElementById('pnlMonthSel');
+  const fyMonths = new Set(getFYMonths(getSelectedFY()));
+  const months = [...new Set([...S.raw.payment.map(r => r._month), ...S.raw.mtr.map(r => r._month)].filter(Boolean))]
+    .filter(m => fyMonths.has(m))
+    .sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
+  const fy = getSelectedFY().replace('FY','').replace('-',' – FY');
+  sel.innerHTML = `<option value="">All Months — ${getSelectedFY()}</option>` + months.map(m => `<option value="${m}">${m}</option>`).join('');
+  refreshCategoryDropdowns();
+}
+
+function renderPnLTab() {
+  const div = document.getElementById('pnlContent');
+  if (!S.pnl) { div.innerHTML = '<div class="empty">Upload data and click Calculate P&amp;L.</div>'; return; }
+
+  const selMonth = document.getElementById('pnlMonthSel').value;
+  const viewMode = document.getElementById('pnlViewSel').value;
+  const catFilter = document.getElementById('pnlCatFilter')?.value || '';
+
+  if (selMonth) {
+    renderMonthPnL(div, selMonth, viewMode, catFilter);
+  } else {
+    renderFYPnL(div, viewMode, catFilter);
+  }
+}
+
+function computeMonthTotals(monthData, adSpend) {
+  const products = Object.values(monthData.products);
+  const grossSales = products.reduce((s,p) => s + p.productSales, 0);
+  const promoRebates = products.reduce((s,p) => s + p.promoRebates, 0);
+  const shippingCr = products.reduce((s,p) => s + p.shippingCredits, 0);
+  const netSales = grossSales + promoRebates + shippingCr;
+  const sellingFees = products.reduce((s,p) => s + p.sellingFees, 0);
+  const fbaFees = products.reduce((s,p) => s + p.fbaFees, 0);
+  const otherFees = products.reduce((s,p) => s + p.otherTxnFees, 0);
+  const storage = monthData.storage || 0;
+  const otherAdj = monthData.otherAdj || 0;
+  const totalFees = sellingFees + fbaFees + otherFees + storage;
+  const netReleased = netSales + totalFees + otherAdj;
+  const totalCogs = products.reduce((s,p) => s + p.cogs, 0);
+  const netContrib = netReleased - adSpend - totalCogs;
+  const units = products.reduce((s,p) => s + p.units, 0);
+  return { grossSales, promoRebates, shippingCr, netSales, sellingFees, fbaFees, otherFees, storage, otherAdj, totalFees, netReleased, totalCogs, adSpend, netContrib, units, marginPct: grossSales ? netContrib/grossSales*100 : 0 };
+}
+
+function renderMonthPnL(div, my, viewMode, catFilter) {
+  const data = S.pnl[my];
+  if (!data) { div.innerHTML = `<div class="empty">No data for ${my}. Make sure payment report covers this period.</div>`; return; }
+  const adSpend = S.config.adSpend[my] || 0;
+  const t = computeMonthTotals(data, adSpend);
+
+  let html = `<div class="stat-cards">
+    <div class="stat"><div class="label">Gross Sales</div><div class="value">₹${fmtK(t.grossSales)}</div><div class="sub">${Math.round(t.units)} units</div></div>
+    <div class="stat"><div class="label">Discount</div><div class="value neg">₹${fmtK(Math.abs(t.promoRebates))}</div><div class="sub">${t.grossSales ? (Math.abs(t.promoRebates)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Amazon Fees</div><div class="value neg">₹${fmtK(Math.abs(t.totalFees))}</div><div class="sub">${t.grossSales ? (Math.abs(t.totalFees)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">COGS</div><div class="value neg">₹${fmtK(t.totalCogs)}</div><div class="sub">${t.grossSales ? (t.totalCogs/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Ad Spend</div><div class="value neg">₹${fmtK(adSpend)}</div><div class="sub">${t.grossSales ? (adSpend/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Net Contribution</div><div class="value ${t.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(t.netContrib)}</div><div class="sub">${t.marginPct.toFixed(1)}% margin</div></div>
+  </div>`;
+
+  if (!catFilter) {
+    html += `<div class="card"><h2>P&L Waterfall — ${my}</h2><div class="waterfall">
+      ${wfRow('Gross Product Sales', t.grossSales, t.grossSales, 'income')}
+      ${wfRow('Promotional Rebates (Discount)', t.promoRebates, t.grossSales, 'cost')}
+      ${wfRow('Shipping Credits', t.shippingCr, t.grossSales, t.shippingCr >= 0 ? 'income' : 'cost')}
+      ${wfRow('Net Sales (Amazon recognised)', t.netSales, t.grossSales, 'subtotal')}
+      ${wfRow('Referral + Closing Fees', t.sellingFees, t.grossSales, 'cost')}
+      ${wfRow('FBA Fulfilment Fees', t.fbaFees, t.grossSales, 'cost')}
+      ${wfRow('Other Transaction Fees', t.otherFees, t.grossSales, 'cost')}
+      ${wfRow('Storage Fees (FBA)', t.storage, t.grossSales, 'cost')}
+      ${wfRow('Other Adjustments', t.otherAdj, t.grossSales, 'income')}
+      ${wfRow('Net Released by Amazon', t.netReleased, t.grossSales, 'subtotal')}
+      ${wfRow('COGS (Cost of Goods Sold)', -t.totalCogs, t.grossSales, 'cost')}
+      ${wfRow('Ad Spend (incl. GST)', -adSpend, t.grossSales, 'cost')}
+      <div class="wf-row total"><div class="wf-label">Net Contribution Margin</div><div class="wf-value">₹${fmt(t.netContrib)}</div><div class="wf-pct" style="color:#cfe">${t.marginPct.toFixed(1)}%</div></div>
+    </div></div>`;
+  }
+
+  html += renderProductTable(data, t.grossSales, viewMode, my, catFilter);
+  div.innerHTML = html;
+}
+
+function wfRow(label, value, base, type) {
+  const pct = base ? (value/base*100).toFixed(1) : '—';
+  const cls = type === 'subtotal' ? 'wf-row subtotal' : type === 'total' ? 'wf-row total' : `wf-row ${type}`;
+  const color = value < 0 ? 'var(--neg)' : value > 0 ? 'var(--pos)' : 'var(--text)';
+  return `<div class="${cls}">
+    <div class="wf-label">${label}</div>
+    <div class="wf-value" style="${type !== 'subtotal' && type !== 'total' ? `color:${color}` : ''}">${value < 0 ? '−' : ''}₹${fmt(Math.abs(value))}</div>
+    <div class="wf-pct">${Math.abs(parseFloat(pct)).toFixed(1)}%</div>
+  </div>`;
+}
+
+function productRowsWithCategory(data) {
+  return Object.entries(data.products).map(([name, p]) => {
+    const margin = p.total - p.cogs;
+    const marginPct = p.productSales ? margin/p.productSales*100 : 0;
+    const asp = p.units ? p.productSales/p.units : 0;
+    const category = S.config.productCategory[name] || 'Uncategorized';
+    return { name, category, ...p, margin, marginPct, asp };
+  }).sort((a,b) => a.category.localeCompare(b.category) || b.productSales - a.productSales);
+}
+
+function renderProductTable(data, grossSales, viewMode, my, catFilter) {
+  let products = productRowsWithCategory(data);
+  if (catFilter) products = products.filter(p => p.category === catFilter);
+  if (!products.length) return `<div class="empty">No data${catFilter ? ` for category "${catFilter}"` : ''}.</div>`;
+
+  const totals = r => r.reduce((acc, p) => {
+    acc.units+=p.units; acc.productSales+=p.productSales; acc.promoRebates+=p.promoRebates;
+    acc.sellingFees+=p.sellingFees; acc.fbaFees+=p.fbaFees; acc.otherTxnFees+=p.otherTxnFees;
+    acc.total+=p.total; acc.cogs+=p.cogs; acc.margin+=p.margin; acc.flaggedRevenue+=(p.flaggedRevenue||0);
+    return acc;
+  }, {units:0,productSales:0,promoRebates:0,sellingFees:0,fbaFees:0,otherTxnFees:0,total:0,cogs:0,margin:0,flaggedRevenue:0});
+
+  const thead = `<thead><tr>
+    <th>Product</th><th>Category</th>
+    <th class="r">Units</th><th class="r">Revenue (₹)</th><th class="r">ASP (₹)</th>
+    <th class="r">Discount (₹)</th><th class="r">Commission (₹)</th><th class="r">FBA Fee (₹)</th>
+    <th class="r">Released (₹)</th><th class="r">COGS (₹)</th>
+    <th class="r">Contribution (₹)</th><th class="r">Margin %</th>
+  </tr></thead>`;
+
+  const pRow = (p, isSub=false) => {
+    const hasFlag = (p.flaggedUnits||0) > 0;
+    return `<tr${hasFlag?' class="flagged"':''} style="${isSub?'background:#fafaf5':''}"}>
+      <td style="${isSub?'padding-left:24px':''}">${p.name}${hasFlag?` <span class="badge warn">⚠ partial</span>`:''}</td>
+      <td><span class="badge ${p.category==='Combo'?'blue':p.category==='Uncategorized'?'grey':'green'}">${p.category}</span></td>
+      <td class="r">${fmt1(p.units)}</td>
+      <td class="r">₹${fmt(p.productSales)}</td>
+      <td class="r">₹${fmt(p.asp||0)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(p.promoRebates))}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(p.sellingFees))}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(p.fbaFees))}</td>
+      <td class="r">₹${fmt(p.total)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(p.cogs)}</td>
+      <td class="r" style="color:${p.margin>=0?'var(--pos)':'var(--neg)'}">₹${fmt(p.margin)}</td>
+      <td class="r" style="color:${p.marginPct>=0?'var(--pos)':'var(--neg)'};font-weight:600">${p.marginPct.toFixed(1)}%</td>
+    </tr>`;
+  };
+
+  const subRow = (label, r, bold=false) => {
+    const m = r.productSales ? r.margin/r.productSales*100 : 0;
+    return `<tr class="total-row" style="${bold?'':'background:#f4f4ec;font-weight:600'}">
+      <td colspan="2" style="font-weight:${bold?700:600}">${label}</td>
+      <td class="r">${fmt1(r.units)}</td><td class="r">₹${fmt(r.productSales)}</td><td class="r">—</td>
+      <td class="r">₹${fmt(Math.abs(r.promoRebates))}</td><td class="r">₹${fmt(Math.abs(r.sellingFees))}</td>
+      <td class="r">₹${fmt(Math.abs(r.fbaFees))}</td><td class="r">₹${fmt(r.total)}</td>
+      <td class="r">₹${fmt(r.cogs)}</td>
+      <td class="r" style="color:${r.margin>=0?'var(--pos)':'var(--neg)'}">₹${fmt(r.margin)}</td>
+      <td class="r" style="color:${m>=0?'var(--pos)':'var(--neg)'};">${m.toFixed(1)}%</td>
+    </tr>`;
+  };
+
+  let body = '';
+  if (viewMode === 'category') {
+    const byCategory = {};
+    for (const p of products) {
+      if (!byCategory[p.category]) byCategory[p.category] = [];
+      byCategory[p.category].push(p);
+    }
+    for (const [cat, rows] of Object.entries(byCategory)) {
+      const catTot = totals(rows);
+      body += `<tr style="background:#e8f0ee"><td colspan="12" style="font-weight:700;color:var(--teal);padding:8px 10px">📂 ${cat}</td></tr>`;
+      body += rows.map(p => pRow(p, true)).join('');
+      body += subRow(`Subtotal — ${cat}`, catTot);
+    }
+  } else {
+    body = products.map(p => pRow(p)).join('');
+  }
+
+  const tot = totals(products);
+  body += subRow('GRAND TOTAL', tot, true);
+
+  const title = catFilter ? `${catFilter} — ${my||'FY'}` : `All Products ${my ? '— '+my : '— FY'}`;
+  return `<div class="card"><h2>Product Breakdown — ${title}</h2>
+    <div class="tbl-wrap tbl-scroll"><table>${thead}<tbody>${body}</tbody></table></div></div>`;
+}
+
+function renderFYPnL(div, viewMode, catFilter) {
+  const fyMonths = new Set(getFYMonths(getSelectedFY()));
+  const months = Object.keys(S.pnl)
+    .filter(m => fyMonths.has(m))
+    .sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
+  if (!months.length) { div.innerHTML = `<div class="empty">No P&L data for ${getSelectedFY()}. Upload data for this FY and recalculate.</div>`; return; }
+
+  let html = '';
+
+  // FY Summary
+  const fyTotals = months.map(my => {
+    const adSpend = S.config.adSpend[my] || 0;
+    return { my, ...computeMonthTotals(S.pnl[my], adSpend) };
+  });
+
+  const fy = fyTotals.reduce((acc, m) => {
+    acc.grossSales += m.grossSales; acc.netContrib += m.netContrib; acc.totalCogs += m.totalCogs;
+    acc.totalFees += m.totalFees; acc.adSpend += m.adSpend; acc.units += m.units;
+    return acc;
+  }, { grossSales:0, netContrib:0, totalCogs:0, totalFees:0, adSpend:0, units:0 });
+  const fyMargin = fy.grossSales ? fy.netContrib/fy.grossSales*100 : 0;
+
+  html += `<div class="stat-cards">
+    <div class="stat"><div class="label">FY Gross Sales</div><div class="value">₹${fmtK(fy.grossSales)}</div><div class="sub">${Math.round(fy.units)} units</div></div>
+    <div class="stat"><div class="label">Total Fees</div><div class="value neg">₹${fmtK(Math.abs(fy.totalFees))}</div><div class="sub">${fy.grossSales ? (Math.abs(fy.totalFees)/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Total COGS</div><div class="value neg">₹${fmtK(fy.totalCogs)}</div><div class="sub">${fy.grossSales ? (fy.totalCogs/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Total Ad Spend</div><div class="value neg">₹${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">FY Net Contribution</div><div class="value ${fy.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(fy.netContrib)}</div><div class="sub">${fyMargin.toFixed(1)}% margin</div></div>
+  </div>`;
+
+  // Month-over-month table
+  html += `<div class="card"><h2>Month-over-Month Summary</h2>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Month</th><th class="r">Units</th><th class="r">Gross Sales (₹)</th><th class="r">Discount (₹)</th><th class="r">Amazon Fees (₹)</th><th class="r">Released (₹)</th><th class="r">COGS (₹)</th><th class="r">Ad Spend (₹)</th><th class="r">Net Contribution (₹)</th><th class="r">Margin %</th></tr></thead>
+    <tbody>`;
+  for (const m of fyTotals) {
+    html += `<tr>
+      <td><strong>${m.my}</strong></td>
+      <td class="r">${fmt1(m.units)}</td>
+      <td class="r">₹${fmt(m.grossSales)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(m.promoRebates))}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(m.totalFees))}</td>
+      <td class="r">₹${fmt(m.netReleased)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(m.totalCogs)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(m.adSpend)}</td>
+      <td class="r" style="color:${m.netContrib >= 0 ? 'var(--pos)' : 'var(--neg)'};font-weight:700">₹${fmt(m.netContrib)}</td>
+      <td class="r" style="color:${m.marginPct >= 0 ? 'var(--pos)' : 'var(--neg)'};font-weight:700">${m.marginPct.toFixed(1)}%</td>
+    </tr>`;
+  }
+  // Totals
+  html += `<tr class="total-row">
+    <td>FY TOTAL</td>
+    <td class="r">${fmt1(fy.units)}</td>
+    <td class="r">₹${fmt(fy.grossSales)}</td>
+    <td class="r">—</td>
+    <td class="r">₹${fmt(Math.abs(fy.totalFees))}</td>
+    <td class="r">—</td>
+    <td class="r">₹${fmt(fy.totalCogs)}</td>
+    <td class="r">₹${fmt(fy.adSpend)}</td>
+    <td class="r" style="color:${fy.netContrib >= 0 ? 'var(--pos)' : 'var(--neg)'}">₹${fmt(fy.netContrib)}</td>
+    <td class="r" style="color:${fyMargin >= 0 ? 'var(--pos)' : 'var(--neg)'}">${fyMargin.toFixed(1)}%</td>
+  </tr>`;
+  html += '</tbody></table></div></div>';
+
+  div.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════════════════════
+function exportPnL() {
+  if (!S.pnl) { showAlert('Calculate P&L first.', 'warn'); return; }
+  const selMonth = document.getElementById('pnlMonthSel').value;
+  const months = selMonth ? [selMonth] : Object.keys(S.pnl).sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
+  const rows = [['Month','Product','Category','Units','Revenue','Discount','Shipping Credits','Commission','FBA Fee','Other Fee','Total Released','COGS','Contribution','Margin %']];
+  for (const my of months) {
+    const data = S.pnl[my];
+    if (!data) continue;
+    for (const [name, p] of Object.entries(data.products)) {
+      const margin = p.total - p.cogs;
+      const cat = S.config.productCategory[name] || 'Uncategorized';
+      rows.push([my, name, cat, fmt1(p.units), fmt(p.productSales), fmt(Math.abs(p.promoRebates)), fmt(p.shippingCredits), fmt(Math.abs(p.sellingFees)), fmt(Math.abs(p.fbaFees)), fmt(Math.abs(p.otherTxnFees)), fmt(p.total), fmt(p.cogs), fmt(margin), (p.productSales ? margin/p.productSales*100 : 0).toFixed(1)+'%']);
+    }
+  }
+  const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `GirOrganic_PnL${selMonth ? '_'+selMonth : '_FY'}.csv`;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FORMATTING HELPERS
+// ═══════════════════════════════════════════════════════════════════
+function fmt(n) { return (Math.round((n||0)*100)/100).toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:0}); }
+function fmt1(n) { return (Math.round((n||0)*10)/10).toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:1}); }
+function fmtK(n) {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 1e6) return sign + (abs/1e6).toFixed(2) + 'L';
+  if (abs >= 1e3) return sign + (abs/1e3).toFixed(1) + 'K';
+  return sign + Math.round(abs).toLocaleString('en-IN');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ALERT HELPER
+// ═══════════════════════════════════════════════════════════════════
+function showAlert(msg, type='info') {
+  const a = document.createElement('div');
+  a.className = `alert ${type}`;
+  a.style.cssText = 'position:fixed;top:16px;right:16px;z-index:9999;max-width:360px;box-shadow:0 4px 12px rgba(0,0,0,.15)';
+  a.textContent = msg;
+  document.body.appendChild(a);
+  setTimeout(() => a.remove(), 3500);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ═══════════════════════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    // Re-render active tab
+    if (btn.dataset.tab === 'sku') { renderCategoryChips(); refreshCategoryDropdowns(); renderSkuMapTable(); renderComboList(); updateUnmappedSkus(); }
+    if (btn.dataset.tab === 'cogs') renderCogsTab();
+    if (btn.dataset.tab === 'recon') renderReconTab();
+    if (btn.dataset.tab === 'pnl') renderPnLTab();
+  });
+});
+
+// Drag and drop
+['mtrDrop','payDrop'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('dragover'); });
+  el.addEventListener('dragleave', () => el.classList.remove('dragover'));
+  el.addEventListener('drop', e => {
+    e.preventDefault(); el.classList.remove('dragover');
+    const dt = new DataTransfer();
+    Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+    const inputId = id === 'mtrDrop' ? 'mtrInput' : 'payInput';
+    document.getElementById(inputId).files = dt.files;
+    document.getElementById(inputId).dispatchEvent(new Event('change'));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// CLOUD SYNC — SUPABASE
+// ═══════════════════════════════════════════════════════════════════
+function sbHeaders() {
+  const { url, anonKey } = S.config.supabase || {};
+  return { url, anonKey, ok: !!(url && anonKey) };
+}
+
+function setSyncStatus(msg, color='var(--muted)') {
+  const el = document.getElementById('syncStatus');
+  if (el) el.innerHTML = `<span style="color:${color}">${msg}</span>`;
+}
+
+function setSyncLog(html) {
+  const el = document.getElementById('syncLog');
+  if (el) el.innerHTML = html;
+}
+
+async function sbUpsert(key, value) {
+  const { url, anonKey, ok } = sbHeaders();
+  if (!ok) return false;
+  const r = await fetch(`${url}/rest/v1/pnl_store`, {
+    method: 'POST',
+    headers: {
+      'apikey': anonKey,
+      'Authorization': `Bearer ${anonKey}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates,return=minimal'
+    },
+    body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
+  });
+  return r.ok;
+}
+
+async function sbGet(key) {
+  const { url, anonKey, ok } = sbHeaders();
+  if (!ok) return null;
+  const r = await fetch(`${url}/rest/v1/pnl_store?key=eq.${encodeURIComponent(key)}&select=value`, {
+    headers: { 'apikey': anonKey, 'Authorization': `Bearer ${anonKey}` }
+  });
+  if (!r.ok) return null;
+  const data = await r.json();
+  return data[0]?.value ?? null;
+}
+
+async function connectSupabase() {
+  const url = document.getElementById('sbUrl').value.trim();
+  const anonKey = document.getElementById('sbKey').value.trim();
+  if (!url || !anonKey) { showAlert('Paste both URL and anon key first.', 'warn'); return; }
+  S.config.supabase = { url, anonKey };
+  saveConfig();
+  setSyncStatus('Connecting…', 'var(--warn)');
+  try {
+    const ok = await sbUpsert('_ping', { ts: Date.now() });
+    if (!ok) throw new Error('Connection failed');
+    setSyncStatus('✅ Connected', 'var(--pos)');
+    await syncToCloud();
+  } catch(e) {
+    setSyncStatus('❌ ' + e.message, 'var(--neg)');
+    showAlert('Connection failed. Check URL and key.', 'error');
+  }
+}
+
+async function syncToCloud() {
+  const { ok } = sbHeaders();
+  if (!ok) return;
+  setSyncStatus('⬆ Syncing…', 'var(--warn)');
+  try {
+    // Config (small — always sync)
+    await sbUpsert('config', S.config);
+
+    // MTR data — split by month to stay under 5MB per row
+    const mtrByMonth = {};
+    for (const r of S.raw.mtr) { const m = r._month||'unknown'; if (!mtrByMonth[m]) mtrByMonth[m]=[]; mtrByMonth[m].push(r); }
+    for (const [m, rows] of Object.entries(mtrByMonth)) await sbUpsert(`mtr_${m}`, rows);
+
+    // Payment data — split by month
+    const payByMonth = {};
+    for (const r of S.raw.payment) { const m = r._month||'unknown'; if (!payByMonth[m]) payByMonth[m]=[]; payByMonth[m].push(r); }
+    for (const [m, rows] of Object.entries(payByMonth)) await sbUpsert(`pay_${m}`, rows);
+
+    const now = new Date().toLocaleString('en-IN');
+    setSyncStatus(`✅ Synced ${now}`, 'var(--pos)');
+    setSyncLog(`<div class="alert success" style="margin-top:6px">☁ Last sync: ${now} · MTR months: ${Object.keys(mtrByMonth).length} · Payment months: ${Object.keys(payByMonth).length}</div>`);
+  } catch(e) {
+    setSyncStatus('❌ Sync failed', 'var(--neg)');
+    showAlert('Sync failed: ' + e.message, 'error');
+  }
+}
+
+async function sbFetch(path) {
+  const { url, anonKey } = sbHeaders();
+  const r = await fetch(`${url}/rest/v1/${path}`, {
+    headers: { 'apikey': anonKey, 'Authorization': `Bearer ${anonKey}`, 'Accept': 'application/json' }
+  });
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`Supabase ${r.status}: ${txt.slice(0,120)}`);
+  }
+  return r.json();
+}
+
+async function syncFromCloud() {
+  const { ok } = sbHeaders();
+  if (!ok) return;
+  setSyncStatus('⬇ Loading…', 'var(--warn)');
+  try {
+    const cfg = await sbGet('config');
+    if (cfg) {
+      const sb = S.config.supabase;
+      Object.assign(S.config, cfg);
+      S.config.supabase = sb;
+      localStorage.setItem('girorganic_pnl_config', JSON.stringify(S.config));
+    }
+
+    const allRows    = await sbFetch('pnl_store?key=like.mtr_%25&select=key,value');
+    const allPayRows = await sbFetch('pnl_store?key=like.pay_%25&select=key,value');
+
+    if (Array.isArray(allRows) && allRows.length)    S.raw.mtr     = allRows.flatMap(r => r.value || []);
+    if (Array.isArray(allPayRows) && allPayRows.length) S.raw.payment = allPayRows.flatMap(r => r.value || []);
+    saveRawData();
+
+    const now = new Date().toLocaleString('en-IN');
+    setSyncStatus(`✅ Synced ${now}`, 'var(--pos)');
+    renderAll();
+    renderUploadSummary();
+    updateHeaderStatus();
+    fillReconMonthFilter();
+    fillPnLMonthFilter();
+  } catch(e) {
+    setSyncStatus('❌ ' + e.message, 'var(--neg)');
+    console.error('syncFromCloud failed:', e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDER ALL
+// ═══════════════════════════════════════════════════════════════════
+function renderAll() {
+  renderCategoryChips();
+  refreshCategoryDropdowns();
+  renderSkuMapTable();
+  renderComboList();
+  renderCogsTab();
+  renderAdSpendTable();
+  updateUnmappedSkus();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════
+function init() {
+  loadConfig();
+  if (!S.config.categories) S.config.categories = [];
+  if (!S.config.productCategory) S.config.productCategory = {};
+  // Always use hardcoded credentials — never let localStorage override them
+  S.config.supabase = {
+    url: 'https://rnaqfqcvirsqizpqupzp.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJuYXFmcWN2aXJzcWl6cHF1cHpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwMzk3MzYsImV4cCI6MjA5NzYxNTczNn0.4DHuPKW-ecquikCSuodaZjwZGuYnnHUt38RORDMhJdg',
+  };
+  loadRawData();
+  populateCogsSelects();
+  renderAll();
+  // Restore Supabase fields
+  const { url, anonKey } = S.config.supabase;
+  if (url) document.getElementById('sbUrl').value = url;
+  if (anonKey) document.getElementById('sbKey').value = anonKey;
+  if (url && anonKey) {
+    setSyncStatus('☁ Connected — pulling latest…', 'var(--pos)');
+    setTimeout(() => syncFromCloud(), 800); // pull fresh data from cloud on open
+  }
+  // Restore UI state if data already in memory
+  if (S.raw.mtr.length) {
+    const months = [...new Set(S.raw.mtr.map(r => r._month).filter(Boolean))].sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
+    document.getElementById('mtrStatus').innerHTML = `
+      <div class="alert info">
+        📂 <strong>${S.raw.mtr.length.toLocaleString()}</strong> MTR rows restored from last session<br>
+        Months: ${months.map(m => `<span class="chip">${m}</span>`).join('')}
+      </div>`;
+  }
+  if (S.raw.payment.length) {
+    const months = [...new Set(S.raw.payment.map(r => r._month).filter(Boolean))].sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
+    document.getElementById('payStatus').innerHTML = `
+      <div class="alert info">
+        📂 <strong>${S.raw.payment.length.toLocaleString()}</strong> payment rows restored from last session<br>
+        Months: ${months.map(m => `<span class="chip">${m}</span>`).join('')}
+      </div>`;
+  }
+  if (S.raw.mtr.length || S.raw.payment.length) {
+    renderUploadSummary();
+    updateHeaderStatus();
+    fillReconMonthFilter();
+    fillPnLMonthFilter();
+  }
+}
+
+init();
+</script>
+</body>
+</html>
