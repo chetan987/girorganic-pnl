@@ -165,7 +165,7 @@ input[type=number] { width: 110px; }
     <div id="pwdErr" class="auth-err"></div>
     <button class="auth-btn" onclick="doPassword()">Unlock Dashboard</button>
     <div><span class="auth-link" onclick="showPhase('fp1')">Forgot password?</span></div>
-    <p id="pwdFirstNote" style="color:#6b7a7a;font-size:11px;margin-top:12px;display:none">
+    <p id="pwdFirstNote" style="color:#6b7a7a;font-size:11px;margin-top:12px;display:block">
       Default password: <strong>Biz@Secure2025</strong><br>Change it after login via 🔑 in header.
     </p>
   </div>
@@ -473,6 +473,49 @@ async function changePassword() {
 
 function closeTFAModal() { document.getElementById('twoFAModal').style.display='none'; }
 
+// ── Reset password from inside dashboard ──
+function openResetFromInside() {
+  const has2FA = !!localStorage.getItem('pnl_totp_secret');
+  if(has2FA) {
+    // Show 2FA verification modal then allow password reset
+    document.getElementById('insideResetModal').style.display='flex';
+    document.getElementById('irStep1').style.display='block';
+    document.getElementById('irStep2').style.display='none';
+    document.getElementById('irOtpErr').textContent='';
+    document.getElementById('irPwdErr').textContent='';
+    clearOTP('ir');
+    setTimeout(()=>document.querySelector('.ir-digit')?.focus(),100);
+  } else {
+    // No 2FA — fall back to change password (requires current pwd)
+    changePassword();
+  }
+}
+async function irVerifyTOTP() {
+  const code = getOTP('ir');
+  if(code.length<6){ document.getElementById('irOtpErr').textContent='Enter all 6 digits.'; return; }
+  const ok = await verifyTOTP(localStorage.getItem('pnl_totp_secret'), code);
+  if(ok){
+    document.getElementById('irStep1').style.display='none';
+    document.getElementById('irStep2').style.display='block';
+    document.getElementById('irNewA').value='';
+    document.getElementById('irNewB').value='';
+    setTimeout(()=>document.getElementById('irNewA').focus(),80);
+  } else {
+    document.getElementById('irOtpErr').textContent='Wrong code.';
+    clearOTP('ir');
+  }
+}
+async function irSetNewPassword() {
+  const a=document.getElementById('irNewA').value;
+  const b=document.getElementById('irNewB').value;
+  if(!a||a.length<8){ document.getElementById('irPwdErr').textContent='Min 8 characters.'; return; }
+  if(a!==b){ document.getElementById('irPwdErr').textContent='Passwords do not match.'; return; }
+  localStorage.setItem('pnl_pwd_hash', await sha256(a));
+  document.getElementById('insideResetModal').style.display='none';
+  if(typeof showAlert==='function') showAlert('Password reset successfully!','success');
+}
+function irOtpNav(el,i){ el.value=el.value.replace(/\D/,''); if(el.value&&i<5) el.parentElement.querySelectorAll('.ir-digit')[i+1].focus(); if(getOTP('ir').length===6) irVerifyTOTP(); }
+
 initAuth();
 </script>
 
@@ -491,6 +534,7 @@ initAuth();
     <span id="hDataStatus">No data loaded</span>
     <button id="btn2FASetup" onclick="open2FASetup()">🔐 Setup 2FA</button>
     <button onclick="changePassword()">🔑 Change Password</button>
+    <button onclick="openResetFromInside()">🔓 Reset Password</button>
     <button onclick="exportConfig()">⬇ Export Config</button>
     <button onclick="triggerImport()">⬆ Import Config</button>
     <input type="file" id="importInput" accept=".json" style="display:none" onchange="importConfig(event)">
