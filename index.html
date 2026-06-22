@@ -1660,19 +1660,22 @@ function renderSkuMapTable() {
   const wrap = document.getElementById('skuMapTableWrap');
   const entries = Object.entries(S.config.skuMap);
   if (!entries.length) { wrap.innerHTML = '<div class="empty">No SKU mappings yet. Add categories first, then map SKUs above.</div>'; return; }
-  const catOptions = ['', ...S.config.categories].map(c => `<option value="${c}">${c || '— category —'}</option>`).join('');
+  const allCatList = ['', 'Discontinued', ...S.config.categories];
   let html = '<table><thead><tr><th>Amazon SKU</th><th>Product Name</th><th>Category</th><th></th></tr></thead><tbody>';
   for (const [sku, prod] of entries) {
     const isCombo = !!S.config.combos[sku];
     const cat = isCombo ? 'Combo' : (S.config.productCategory[prod] || '');
+    const catOpts = allCatList.map(c =>
+      `<option value="${c}"${c === cat ? ' selected' : ''}>${c || '— category —'}</option>`
+    ).join('');
     html += `<tr>
       <td><code>${sku}</code> ${isCombo ? '<span class="badge blue">combo</span>' : ''}</td>
       <td>${prod}</td>
       <td>${isCombo
         ? '<span class="badge blue">Combo</span>'
-        : `<select onchange="updateSkuCategory('${sku}',this.value)" style="font-size:12px;padding:3px 6px">${catOptions.replace(`value="${cat}"`,`value="${cat}" selected`)}</select>`
+        : `<select onchange="updateSkuCategory('${sku.replace(/'/g,"\\'")}',this.value)" style="font-size:12px;padding:3px 6px">${catOpts}</select>`
       }</td>
-      <td><button class="btn danger small" onclick="deleteSkuMap('${sku}')">✕</button></td>
+      <td><button class="btn danger small" onclick="deleteSkuMap('${sku.replace(/'/g,"\\'")}')">✕</button></td>
     </tr>`;
   }
   html += '</tbody></table>';
