@@ -2347,13 +2347,26 @@ function wfRow(label, value, base, type) {
   </div>`;
 }
 
+function resolveProductName(nameOrSku) {
+  // If key in S.pnl is a raw SKU (buildPnL ran before skuMap loaded), resolve to product name
+  return S.config.skuMap[nameOrSku] || nameOrSku;
+}
+function resolveCategory(nameOrSku) {
+  // Direct lookup first, then via skuMap (handles stale raw-SKU keys in S.pnl)
+  return S.config.productCategory[nameOrSku]
+    || (S.config.skuMap[nameOrSku] ? S.config.productCategory[S.config.skuMap[nameOrSku]] : null)
+    || (S.config.combos[nameOrSku] ? 'Combo' : null)
+    || 'Uncategorized';
+}
+
 function productRowsWithCategory(data) {
   return Object.entries(data.products).map(([name, p]) => {
     const margin = p.total - p.cogs;
     const marginPct = p.productSales ? margin/p.productSales*100 : 0;
     const asp = p.units ? p.productSales/p.units : 0;
-    const category = S.config.productCategory[name] || 'Uncategorized';
-    return { name, category, ...p, margin, marginPct, asp };
+    const displayName = resolveProductName(name);
+    const category = resolveCategory(name);
+    return { name: displayName, category, ...p, margin, marginPct, asp };
   }).sort((a,b) => a.category.localeCompare(b.category) || b.productSales - a.productSales);
 }
 
