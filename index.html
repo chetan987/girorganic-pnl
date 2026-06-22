@@ -2766,6 +2766,10 @@ async function syncFromCloud() {
     updateHeaderStatus();
     fillReconMonthFilter();
     fillPnLMonthFilter();
+    // Rebuild P&L with updated config (categories, skuMap, COGS)
+    buildRecon();
+    buildPnL();
+    renderPnLTab();
   } catch(e) {
     setSyncStatus('❌ ' + e.message, 'var(--neg)');
     console.error('syncFromCloud failed:', e);
