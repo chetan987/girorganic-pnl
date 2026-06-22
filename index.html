@@ -2096,6 +2096,7 @@ function renderReconTab() {
 // ═══════════════════════════════════════════════════════════════════
 function expandSKU(sku, qty, productSales, sellingFees, fbaFees, otherTxnFees, promoRebates, shippingCredits, total, cogsMap) {
   // Returns array of { product, units, revShare } where revShare sums to 1
+  if (!sku || !sku.trim()) return []; // blank SKU = service row, skip
   const combo = S.config.combos[sku];
   if (combo && combo.components.length > 0) {
     // Prorate by COGS ratio (or equal if no COGS)
@@ -2122,16 +2123,30 @@ function buildPnL() {
   // Get set of unmatched order IDs from recon (to flag)
   const unmatchedIds = new Set((S.recon?.unmatched || []).map(r => r.orderId));
 
+  // Types that carry product-level data (expand by SKU)
+  const PRODUCT_TYPES = new Set(['Order','Refund','Adjustment','Reimbursements','Clawbacks','SAFE-T Reimbursement']);
+
   for (const row of S.raw.payment) {
     if (!row._month || row.type === 'Transfer') continue;
     const my = row._month;
-    if (!byMonth[my]) byMonth[my] = { products: {}, storage: 0, otherAdj: 0, skuRaw: {} };
+    if (!byMonth[my]) byMonth[my] = { products: {}, storage: 0, mfnShipping: 0, otherAdj: 0, skuRaw: {} };
 
     if (row.type === 'FBA Inventory Fee') {
       byMonth[my].storage += row.total;
       continue;
     }
-    if (row.type !== 'Order' && row.type !== 'Refund') {
+    // Easy Ship / MFN shipping fees — charged per order, no SKU
+    if (row.type === 'Shipping Services') {
+      byMonth[my].mfnShipping += row.total;
+      continue;
+    }
+    // FBA fee reversals, service fees, platform charges, misc
+    if (!PRODUCT_TYPES.has(row.type)) {
+      byMonth[my].otherAdj += row.total;
+      continue;
+    }
+    // Product types with blank SKU (e.g. some Adjustments with no order) → otherAdj
+    if (!row.sku || !row.sku.trim()) {
       byMonth[my].otherAdj += row.total;
       continue;
     }
@@ -2174,7 +2189,7 @@ function buildPnL() {
   for (const order of (S.recon?.unmatched || [])) {
     if (!order._month && !order.month) continue;
     const my = order.month || order._month;
-    if (!byMonth[my]) byMonth[my] = { products: {}, storage: 0, otherAdj: 0, skuRaw: {} };
+    if (!byMonth[my]) byMonth[my] = { products: {}, storage: 0, mfnShipping: 0, otherAdj: 0, skuRaw: {} };
     const cogsMap = getCogsForMonth(my);
     for (const item of order.items) {
       const expansion = expandSKU(item.sku, item.qty, item.price, 0, 0, 0, 0, 0, item.price, cogsMap);
@@ -2235,13 +2250,14 @@ function computeMonthTotals(monthData, adSpend) {
   const fbaFees = products.reduce((s,p) => s + p.fbaFees, 0);
   const otherFees = products.reduce((s,p) => s + p.otherTxnFees, 0);
   const storage = monthData.storage || 0;
+  const mfnShipping = monthData.mfnShipping || 0;
   const otherAdj = monthData.otherAdj || 0;
-  const totalFees = sellingFees + fbaFees + otherFees + storage;
+  const totalFees = sellingFees + fbaFees + otherFees + storage + mfnShipping;
   const netReleased = netSales + totalFees + otherAdj;
   const totalCogs = products.reduce((s,p) => s + p.cogs, 0);
   const netContrib = netReleased - adSpend - totalCogs;
   const units = products.reduce((s,p) => s + p.units, 0);
-  return { grossSales, promoRebates, shippingCr, netSales, sellingFees, fbaFees, otherFees, storage, otherAdj, totalFees, netReleased, totalCogs, adSpend, netContrib, units, marginPct: grossSales ? netContrib/grossSales*100 : 0 };
+  return { grossSales, promoRebates, shippingCr, netSales, sellingFees, fbaFees, otherFees, storage, mfnShipping, otherAdj, totalFees, netReleased, totalCogs, adSpend, netContrib, units, marginPct: grossSales ? netContrib/grossSales*100 : 0 };
 }
 
 function renderMonthPnL(div, my, viewMode, catFilter) {
@@ -2280,6 +2296,7 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
       ${wfRow('FBA Fulfilment Fees', t.fbaFees, t.grossSales, 'cost')}
       ${wfRow('Other Transaction Fees', t.otherFees, t.grossSales, 'cost')}
       ${wfRow('Storage Fees (FBA)', t.storage, t.grossSales, 'cost')}
+      ${t.mfnShipping ? wfRow('Easy Ship / MFN Shipping Fees', t.mfnShipping, t.grossSales, 'cost') : ''}
       ${wfRow('Other Adjustments', t.otherAdj, t.grossSales, 'income')}
       ${wfRow('Net Released by Amazon', t.netReleased, t.grossSales, 'subtotal')}
       ${wfRow('COGS (Cost of Goods Sold)', -t.totalCogs, t.grossSales, 'cost')}
