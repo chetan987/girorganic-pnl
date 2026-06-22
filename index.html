@@ -1085,6 +1085,9 @@ let _syncTimer = null;
 function saveConfig() {
   localStorage.setItem('girorganic_pnl_config', JSON.stringify(S.config));
   if (S.config.supabase?.url && S.config.supabase?.anonKey) {
+    // Config (small) — push immediately so category/SKU changes survive cache clear
+    sbUpsert('config', S.config).catch(() => {});
+    // Data (large) — debounce to avoid hammering Supabase on rapid changes
     clearTimeout(_syncTimer);
     _syncTimer = setTimeout(() => syncToCloud(), 2000);
   }
