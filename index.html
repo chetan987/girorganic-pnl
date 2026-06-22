@@ -1597,14 +1597,16 @@ function getAllProducts() {
 }
 
 function getInheritedCogs(product, monthYear) {
-  // Find the nearest previous month that has COGS for this product
+  // Look backward first (most recent past rate), then forward (nearest upcoming rate)
   const idx = ORDERED_MY.indexOf(monthYear);
   if (idx < 0) return { value: null, from: null };
   for (let i = idx - 1; i >= 0; i--) {
     const my = ORDERED_MY[i];
-    if (S.config.cogs[my]?.[product] !== undefined) {
-      return { value: S.config.cogs[my][product], from: my };
-    }
+    if (S.config.cogs[my]?.[product] !== undefined) return { value: S.config.cogs[my][product], from: my };
+  }
+  for (let i = idx + 1; i < ORDERED_MY.length; i++) {
+    const my = ORDERED_MY[i];
+    if (S.config.cogs[my]?.[product] !== undefined) return { value: S.config.cogs[my][product], from: my };
   }
   return { value: null, from: null };
 }
@@ -2062,8 +2064,18 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
   const adSpend = S.config.adSpend[my] || 0;
   const t = computeMonthTotals(data, adSpend);
 
-  let html = `<div class="stat-cards">
+  // Unmapped SKU warning
+  const unmappedSkus = Object.keys(data.products).filter(name => {
+    const mappedNames = new Set(Object.values(S.config.skuMap));
+    return !mappedNames.has(name) && !getAllProducts().includes(name);
+  });
+  const unmappedBanner = unmappedSkus.length
+    ? `<div class="alert warn" style="margin-bottom:12px">⚠ <strong>${unmappedSkus.length} unmapped SKU(s)</strong> found in this month's data — COGS will be ₹0 for these. Go to <strong>SKU Mapping tab</strong> to map them: ${unmappedSkus.map(s=>`<code>${s}</code>`).join(', ')}</div>`
+    : '';
+
+  let html = unmappedBanner + `<div class="stat-cards">
     <div class="stat"><div class="label">Gross Sales</div><div class="value">₹${fmtK(t.grossSales)}</div><div class="sub">${Math.round(t.units)} units</div></div>
+    <div class="stat"><div class="label">Net Sales</div><div class="value">₹${fmtK(t.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
     <div class="stat"><div class="label">Discount</div><div class="value neg">₹${fmtK(Math.abs(t.promoRebates))}</div><div class="sub">${t.grossSales ? (Math.abs(t.promoRebates)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Amazon Fees</div><div class="value neg">₹${fmtK(Math.abs(t.totalFees))}</div><div class="sub">${t.grossSales ? (Math.abs(t.totalFees)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">COGS</div><div class="value neg">₹${fmtK(t.totalCogs)}</div><div class="sub">${t.grossSales ? (t.totalCogs/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
@@ -2206,14 +2218,15 @@ function renderFYPnL(div, viewMode, catFilter) {
   });
 
   const fy = fyTotals.reduce((acc, m) => {
-    acc.grossSales += m.grossSales; acc.netContrib += m.netContrib; acc.totalCogs += m.totalCogs;
-    acc.totalFees += m.totalFees; acc.adSpend += m.adSpend; acc.units += m.units;
+    acc.grossSales += m.grossSales; acc.netSales += m.netSales; acc.netContrib += m.netContrib;
+    acc.totalCogs += m.totalCogs; acc.totalFees += m.totalFees; acc.adSpend += m.adSpend; acc.units += m.units;
     return acc;
-  }, { grossSales:0, netContrib:0, totalCogs:0, totalFees:0, adSpend:0, units:0 });
+  }, { grossSales:0, netSales:0, netContrib:0, totalCogs:0, totalFees:0, adSpend:0, units:0 });
   const fyMargin = fy.grossSales ? fy.netContrib/fy.grossSales*100 : 0;
 
   html += `<div class="stat-cards">
     <div class="stat"><div class="label">FY Gross Sales</div><div class="value">₹${fmtK(fy.grossSales)}</div><div class="sub">${Math.round(fy.units)} units</div></div>
+    <div class="stat"><div class="label">FY Net Sales</div><div class="value">₹${fmtK(fy.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
     <div class="stat"><div class="label">Total Fees</div><div class="value neg">₹${fmtK(Math.abs(fy.totalFees))}</div><div class="sub">${fy.grossSales ? (Math.abs(fy.totalFees)/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Total COGS</div><div class="value neg">₹${fmtK(fy.totalCogs)}</div><div class="sub">${fy.grossSales ? (fy.totalCogs/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Total Ad Spend</div><div class="value neg">₹${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
