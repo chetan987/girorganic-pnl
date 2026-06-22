@@ -130,6 +130,68 @@ input[type=number] { width: 110px; }
 </head>
 <body>
 
+<!-- ═══════════ PASSWORD GATE ═══════════ -->
+<div id="authOverlay" style="position:fixed;inset:0;background:#0B3D3D;z-index:99999;display:flex;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:40px 48px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.4);text-align:center">
+    <div style="font-size:36px;margin-bottom:8px">🌿</div>
+    <h2 style="color:#0B3D3D;font-size:20px;margin-bottom:4px;font-family:sans-serif">GirOrganic P&L</h2>
+    <p style="color:#6b7a7a;font-size:13px;margin-bottom:24px;font-family:sans-serif">Enter your password to continue</p>
+    <input type="password" id="authInput" placeholder="Password"
+      style="width:100%;padding:11px 14px;border:2px solid #e0e0d8;border-radius:8px;font-size:15px;outline:none;margin-bottom:8px;box-sizing:border-box"
+      onkeydown="if(event.key==='Enter') checkAuth()"
+      oninput="document.getElementById('authErr').textContent=''">
+    <div id="authErr" style="color:#c0392b;font-size:12px;min-height:18px;margin-bottom:8px"></div>
+    <button onclick="checkAuth()"
+      style="width:100%;background:#0B3D3D;color:#fff;border:none;padding:12px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:sans-serif">
+      Unlock Dashboard
+    </button>
+    <p id="authSetupNote" style="color:#6b7a7a;font-size:11px;margin-top:14px;display:none;font-family:sans-serif">
+      First time: default password is <strong>GirOrganic@2025</strong><br>Change it from Settings after login.
+    </p>
+  </div>
+</div>
+
+<script>
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+async function initAuth() {
+  if (sessionStorage.getItem('pnl_authed') === '1') {
+    document.getElementById('authOverlay').remove(); return;
+  }
+  if (!localStorage.getItem('pnl_pwd_hash')) {
+    localStorage.setItem('pnl_pwd_hash', await sha256('GirOrganic@2025'));
+    document.getElementById('authSetupNote').style.display = 'block';
+  }
+  setTimeout(() => document.getElementById('authInput').focus(), 100);
+}
+async function checkAuth() {
+  const val = document.getElementById('authInput').value;
+  if (!val) return;
+  const hash = await sha256(val);
+  if (hash === localStorage.getItem('pnl_pwd_hash')) {
+    sessionStorage.setItem('pnl_authed','1');
+    document.getElementById('authOverlay').remove();
+  } else {
+    document.getElementById('authErr').textContent = 'Incorrect password.';
+    document.getElementById('authInput').value = '';
+    document.getElementById('authInput').focus();
+  }
+}
+async function changePassword() {
+  const cur = prompt('Current password:');
+  if (!cur) return;
+  if (await sha256(cur) !== localStorage.getItem('pnl_pwd_hash')) { alert('Wrong password.'); return; }
+  const np = prompt('New password (min 8 chars):');
+  if (!np || np.length < 8) { alert('Too short.'); return; }
+  if (np !== prompt('Confirm new password:')) { alert('Do not match.'); return; }
+  localStorage.setItem('pnl_pwd_hash', await sha256(np));
+  alert('Password updated!');
+}
+initAuth();
+</script>
+
 <header>
   <h1>🌿 GirOrganic · Amazon.in P&L Dashboard</h1>
   <div class="hright">
@@ -143,6 +205,7 @@ input[type=number] { width: 110px; }
       </select>
     </div>
     <span id="hDataStatus">No data loaded</span>
+    <button onclick="changePassword()">🔑 Change Password</button>
     <button onclick="exportConfig()">⬇ Export Config</button>
     <button onclick="triggerImport()">⬆ Import Config</button>
     <input type="file" id="importInput" accept=".json" style="display:none" onchange="importConfig(event)">
