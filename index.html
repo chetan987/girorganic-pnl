@@ -1445,61 +1445,104 @@ function deleteSkuMap(sku) {
   updateUnmappedSkus();
 }
 
-function fyQuickMap(sku, safeId) {
-  const prodEl = document.getElementById('fyMapProd_' + safeId);
-  const catEl  = document.getElementById('fyMapCat_'  + safeId);
-  const prod = prodEl ? prodEl.value.trim() : '';
-  const cat  = catEl  ? catEl.value.trim()  : '';
-  if (!prod) { showAlert('Enter a product name for SKU: ' + sku, 'warn'); return; }
-  S.config.skuMap[sku] = prod;
-  if (cat) S.config.productCategory[prod] = cat;
-  saveConfig();
-  renderSkuMapTable();
-  updateUnmappedSkus();
-  const row = prodEl?.closest('tr');
-  if (row) {
-    row.style.background = '#d1fae5';
-    row.innerHTML = `<td colspan="4" style="color:#065f46;font-size:12px;padding:6px 10px">✓ Mapped <strong>${sku}</strong> → <strong>${prod}</strong>${cat ? ` (${cat})` : ''}</td>`;
-    setTimeout(() => {
-      row.remove();
-      const tbody = document.querySelector('#fyUnmappedCard tbody');
-      if (tbody && tbody.children.length === 0) {
-        document.getElementById('fyUnmappedCard')?.remove();
-        buildPnL();
-        renderPnLTab();
-      }
-    }, 1200);
-  }
+function buildUnmappedCard(skus, prefix) {
+  const knownProducts = getAllProducts();
+  const productOpts = knownProducts.map(p => `<option value="${p.replace(/"/g,'&quot;')}">${p}</option>`).join('');
+  const rows = skus.map(sku => {
+    const sid = prefix + '_' + sku.replace(/[^a-z0-9]/gi,'_');
+    const escapedSku = sku.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const isCombo = !!S.config.combos[sku];
+    const comboHint = isCombo
+      ? `<span class="badge blue" style="margin-left:4px">combo defined</span>`
+      : '';
+    return `<tr id="unmappedRow_${sid}">
+      <td><code style="font-size:12px;background:#fef3c7;padding:2px 6px;border-radius:4px">${sku}</code>${comboHint}</td>
+      <td>
+        <input list="prodList_${sid}" id="mapProd_${sid}"
+          class="auth-inp" style="height:32px;font-size:12px;margin:0;padding:4px 8px;width:240px"
+          placeholder="Type or select product name…" ${isCombo ? 'disabled placeholder="Combo — use Setup Combo"' : ''}>
+        <datalist id="prodList_${sid}">${productOpts}</datalist>
+      </td>
+      <td>
+        <select id="mapCat_${sid}" style="height:32px;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px" ${isCombo ? 'disabled' : ''}>
+          <option value="">— Category —</option>
+          <option value="Combo">Combo</option>
+          ${S.config.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
+        </select>
+      </td>
+      <td style="white-space:nowrap;display:flex;gap:4px">
+        ${isCombo
+          ? `<button class="btn small" style="background:#4338ca" onclick="quickMapCombo('${escapedSku}','${sid}')">✏ Edit Combo</button>`
+          : `<button class="btn small" onclick="quickMapProduct('${escapedSku}','${sid}')">Map</button>
+             <button class="btn small secondary" onclick="quickSetupCombo('${escapedSku}','${sid}')">+ Setup Combo</button>`
+        }
+      </td>
+    </tr>`;
+  }).join('');
+  const cardId = prefix + 'UnmappedCard';
+  const label = prefix === 'fy' ? 'across FY' : 'in this month';
+  return `<div id="${cardId}" class="card" style="border-color:#f59e0b;margin-bottom:14px">
+    <h2 style="color:#92400e">⚠ ${skus.length} Unmapped SKU(s) ${label} — COGS is ₹0 for these</h2>
+    <p style="font-size:12px;color:#78350f;margin-bottom:10px">
+      For regular products: type/select a name → <strong>Map</strong>.<br>
+      For combo listings (bundles): click <strong>+ Setup Combo</strong> to define components in SKU &amp; Combos tab.
+    </p>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>SKU</th><th>Map to Product</th><th>Category</th><th style="min-width:180px"></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
 }
 
-function pnlQuickMap(sku, safeId) {
-  const prodEl = document.getElementById('pnlMapProd_' + safeId);
-  const catEl  = document.getElementById('pnlMapCat_'  + safeId);
+function _removeUnmappedRow(sid, prefix) {
+  const row = document.getElementById('unmappedRow_' + sid);
+  if (!row) return;
+  row.style.background = '#d1fae5';
+  const cells = row.querySelectorAll('td');
+  if (cells.length) cells[cells.length-1].innerHTML = '<span style="color:#065f46;font-size:12px">✓ Done</span>';
+  setTimeout(() => {
+    row.remove();
+    const cardId = prefix + 'UnmappedCard';
+    const tbody = document.querySelector('#' + cardId + ' tbody');
+    if (tbody && tbody.children.length === 0) {
+      document.getElementById(cardId)?.remove();
+      buildPnL(); renderPnLTab();
+    }
+  }, 1000);
+}
+
+function quickMapProduct(sku, sid) {
+  const prodEl = document.getElementById('mapProd_' + sid);
+  const catEl  = document.getElementById('mapCat_'  + sid);
   const prod = prodEl ? prodEl.value.trim() : '';
   const cat  = catEl  ? catEl.value.trim()  : '';
-  if (!prod) { showAlert('Enter a product name for SKU: ' + sku, 'warn'); return; }
+  if (!prod) { showAlert('Enter a product name for: ' + sku, 'warn'); return; }
   S.config.skuMap[sku] = prod;
   if (cat) S.config.productCategory[prod] = cat;
-  saveConfig();
-  renderSkuMapTable();
-  updateUnmappedSkus();
-  // Remove just this row — no full re-render
-  const row = prodEl?.closest('tr');
-  if (row) {
-    row.style.background = '#d1fae5';
-    row.innerHTML = `<td colspan="4" style="color:#065f46;font-size:12px;padding:6px 10px">✓ Mapped <strong>${sku}</strong> → <strong>${prod}</strong>${cat ? ` (${cat})` : ''}</td>`;
-    setTimeout(() => {
-      row.remove();
-      // If no rows left, remove the whole card
-      const tbody = document.querySelector('#pnlUnmappedCard tbody');
-      if (tbody && tbody.children.length === 0) {
-        document.getElementById('pnlUnmappedCard')?.remove();
-        buildPnL();
-        renderPnLTab();
-      }
-    }, 1200);
-  }
+  saveConfig(); renderSkuMapTable(); updateUnmappedSkus();
+  const prefix = sid.startsWith('fy_') ? 'fy' : 'pnl';
+  _removeUnmappedRow(sid, prefix);
 }
+
+function quickSetupCombo(sku, sid) {
+  // Navigate to SKU & Combos tab and pre-fill the combo SKU field
+  switchTab('sku', () => {
+    const skuEl = document.getElementById('newComboSku');
+    if (skuEl) { skuEl.value = sku; skuEl.focus(); }
+    showAlert(`Fill in the combo name and components for SKU: ${sku}, then click "Add Combo".`, 'info');
+  });
+}
+
+function quickMapCombo(sku, sid) {
+  // Combo already defined — just navigate to edit it
+  switchTab('sku', () => {
+    showAlert(`Combo "${sku}" is already set up. Edit its components in the Combo section below.`, 'info');
+  });
+}
+
+// Legacy — kept for safety, new code uses quickMapProduct/quickSetupCombo
+function fyQuickMap(sku, safeId) { quickMapProduct(sku, 'fy_' + safeId.replace(/^fy_/,'')); }
+function pnlQuickMap(sku, safeId) { quickMapProduct(sku, 'pnl_' + safeId.replace(/^pnl_/,'')); }
 
 function updateSkuCategory(sku, cat) {
   const prod = S.config.skuMap[sku];
@@ -2127,37 +2170,7 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
   });
   let unmappedBanner = '';
   if (unmappedSkus.length) {
-    const knownProducts = getAllProducts();
-    const productOpts = knownProducts.map(p => `<option value="${p.replace(/"/g,'&quot;')}">${p}</option>`).join('');
-    const rows = unmappedSkus.map(sku => `
-      <tr>
-        <td><code style="font-size:12px;background:#fef3c7;padding:2px 6px;border-radius:4px">${sku}</code></td>
-        <td>
-          <input list="pnlProductList_${sku.replace(/[^a-z0-9]/gi,'_')}" id="pnlMapProd_${sku.replace(/[^a-z0-9]/gi,'_')}"
-            class="auth-inp" style="height:32px;font-size:12px;margin:0;padding:4px 8px;width:260px"
-            placeholder="Type or select product name…">
-          <datalist id="pnlProductList_${sku.replace(/[^a-z0-9]/gi,'_')}">${productOpts}</datalist>
-        </td>
-        <td>
-          <select id="pnlMapCat_${sku.replace(/[^a-z0-9]/gi,'_')}" style="height:32px;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">
-            <option value="">— Category —</option>
-            <option value="Combo">Combo</option>
-            ${S.config.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
-          </select>
-        </td>
-        <td>
-          <button class="btn small" onclick="pnlQuickMap('${sku.replace(/'/g,"\\'")}','${sku.replace(/[^a-z0-9]/gi,'_')}')">Map</button>
-        </td>
-      </tr>`).join('');
-    unmappedBanner = `
-      <div id="pnlUnmappedCard" class="card" style="border-color:#f59e0b;margin-bottom:14px">
-        <h2 style="color:#92400e">⚠ ${unmappedSkus.length} Unmapped SKU(s) — COGS is ₹0 for these</h2>
-        <p style="font-size:12px;color:#78350f;margin-bottom:10px">Map each SKU to a product name below, then click <strong>Calculate P&amp;L</strong> again to apply COGS.</p>
-        <div class="tbl-wrap"><table>
-          <thead><tr><th>SKU</th><th>Map to Product</th><th>Category</th><th></th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>
-      </div>`;
+    unmappedBanner = buildUnmappedCard(unmappedSkus, 'pnl');
   }
 
   let html = unmappedBanner + `<div class="stat-cards">
@@ -2307,40 +2320,7 @@ function renderFYPnL(div, viewMode, catFilter) {
   }
   const fyUnmapped = [...fyUnmappedSet];
 
-  let fyUnmappedBanner = '';
-  if (fyUnmapped.length) {
-    const knownProducts = getAllProducts();
-    const productOpts = knownProducts.map(p => `<option value="${p.replace(/"/g,'&quot;')}">${p}</option>`).join('');
-    const rows = fyUnmapped.map(sku => `
-      <tr>
-        <td><code style="font-size:12px;background:#fef3c7;padding:2px 6px;border-radius:4px">${sku}</code></td>
-        <td>
-          <input list="fyProductList_${sku.replace(/[^a-z0-9]/gi,'_')}" id="fyMapProd_${sku.replace(/[^a-z0-9]/gi,'_')}"
-            class="auth-inp" style="height:32px;font-size:12px;margin:0;padding:4px 8px;width:260px"
-            placeholder="Type or select product name…">
-          <datalist id="fyProductList_${sku.replace(/[^a-z0-9]/gi,'_')}">${productOpts}</datalist>
-        </td>
-        <td>
-          <select id="fyMapCat_${sku.replace(/[^a-z0-9]/gi,'_')}" style="height:32px;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">
-            <option value="">— Category —</option>
-            <option value="Combo">Combo</option>
-            ${S.config.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
-          </select>
-        </td>
-        <td><button class="btn small" onclick="fyQuickMap('${sku.replace(/'/g,"\\'")}','${sku.replace(/[^a-z0-9]/gi,'_')}')">Map</button></td>
-      </tr>`).join('');
-    fyUnmappedBanner = `
-      <div id="fyUnmappedCard" class="card" style="border-color:#f59e0b;margin-bottom:14px">
-        <h2 style="color:#92400e">⚠ ${fyUnmapped.length} Unmapped SKU(s) across FY — COGS is ₹0 for these</h2>
-        <p style="font-size:12px;color:#78350f;margin-bottom:10px">Map each SKU below, then click <strong>Calculate P&L</strong> to apply COGS across all months.</p>
-        <div class="tbl-wrap"><table>
-          <thead><tr><th>SKU</th><th>Map to Product</th><th>Category</th><th></th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>
-      </div>`;
-  }
-
-  let html = fyUnmappedBanner;
+  let html = fyUnmapped.length ? buildUnmappedCard(fyUnmapped, 'fy') : '';
 
   // FY Summary
   const fyTotals = months.map(my => {
@@ -2455,18 +2435,21 @@ function showAlert(msg, type='info') {
 // ═══════════════════════════════════════════════════════════════════
 // TAB NAVIGATION
 // ═══════════════════════════════════════════════════════════════════
+function switchTab(tabName, afterSwitch) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  const btn = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  if (btn) btn.classList.add('active');
+  document.getElementById('tab-' + tabName)?.classList.add('active');
+  if (tabName === 'sku') { renderCategoryChips(); refreshCategoryDropdowns(); renderSkuMapTable(); renderComboList(); updateUnmappedSkus(); }
+  if (tabName === 'cogs') renderCogsTab();
+  if (tabName === 'recon') renderReconTab();
+  if (tabName === 'pnl') renderPnLTab();
+  if (afterSwitch) setTimeout(afterSwitch, 50);
+}
+
 document.querySelectorAll('.tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    // Re-render active tab
-    if (btn.dataset.tab === 'sku') { renderCategoryChips(); refreshCategoryDropdowns(); renderSkuMapTable(); renderComboList(); updateUnmappedSkus(); }
-    if (btn.dataset.tab === 'cogs') renderCogsTab();
-    if (btn.dataset.tab === 'recon') renderReconTab();
-    if (btn.dataset.tab === 'pnl') renderPnLTab();
-  });
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
 // Drag and drop
