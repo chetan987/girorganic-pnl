@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GirOrganic · Amazon.in P&L Dashboard</title>
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="googlebot" content="noindex, nofollow">
+<title>Data Analytics Tool</title>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
@@ -134,7 +136,7 @@ input[type=number] { width: 110px; }
 <div id="authOverlay" style="position:fixed;inset:0;background:#0B3D3D;z-index:99999;display:flex;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:16px;padding:40px 48px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.4);text-align:center">
     <div style="font-size:36px;margin-bottom:8px">🌿</div>
-    <h2 style="color:#0B3D3D;font-size:20px;margin-bottom:4px;font-family:sans-serif">GirOrganic P&L</h2>
+    <h2 style="color:#0B3D3D;font-size:20px;margin-bottom:4px;font-family:sans-serif">Analytics Dashboard</h2>
     <p style="color:#6b7a7a;font-size:13px;margin-bottom:24px;font-family:sans-serif">Enter your password to continue</p>
     <input type="password" id="authInput" placeholder="Password"
       style="width:100%;padding:11px 14px;border:2px solid #e0e0d8;border-radius:8px;font-size:15px;outline:none;margin-bottom:8px;box-sizing:border-box"
@@ -146,7 +148,7 @@ input[type=number] { width: 110px; }
       Unlock Dashboard
     </button>
     <p id="authSetupNote" style="color:#6b7a7a;font-size:11px;margin-top:14px;display:none;font-family:sans-serif">
-      First time: default password is <strong>GirOrganic@2025</strong><br>Change it from Settings after login.
+      First time: use the default password you were given.<br>Change it from Settings after login.
     </p>
   </div>
 </div>
@@ -193,7 +195,7 @@ initAuth();
 </script>
 
 <header>
-  <h1>🌿 GirOrganic · Amazon.in P&L Dashboard</h1>
+  <h1>📊 Business Analytics Dashboard</h1>
   <div class="hright">
     <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);padding:5px 10px;border-radius:8px">
       <span style="font-size:11px;color:#a8d0d0;font-weight:600">FINANCIAL YEAR</span>
@@ -1855,7 +1857,7 @@ function exportPnL() {
   const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `GirOrganic_PnL${selMonth ? '_'+selMonth : '_FY'}.csv`;
+  a.download = `PnL_Report${selMonth ? '_'+selMonth : '_FY'}.csv`;
   a.click();
 }
 
