@@ -381,10 +381,46 @@ function showPhase(p) {
   if(p==='fp1') setTimeout(()=>document.querySelector('#fpOtpBoxes .fp-digit')?.focus(),80);
 }
 
+const _SB_URL = 'https://rnaqfqcvirsqizpqupzp.supabase.co';
+const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJuYXFmcWN2aXJzcWl6cHF1cHpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwMzk3MzYsImV4cCI6MjA5NzYxNTczNn0.4DHuPKW-ecquikCSuodaZjwZGuYnnHUt38RORDMhJdg';
+
+async function sbAuthGet(key) {
+  try {
+    const r = await fetch(`${_SB_URL}/rest/v1/pnl_store?key=eq.${encodeURIComponent(key)}&select=value`, {
+      headers: { 'apikey': _SB_KEY, 'Authorization': `Bearer ${_SB_KEY}` }
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d[0]?.value ?? null;
+  } catch { return null; }
+}
+
+async function sbAuthUpsert(key, value) {
+  try {
+    await fetch(`${_SB_URL}/rest/v1/pnl_store`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_KEY, 'Authorization': `Bearer ${_SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
+    });
+  } catch {}
+}
+
 async function initAuth() {
   if(sessionStorage.getItem('pnl_authed')==='1') { document.getElementById('authOverlay').remove(); return; }
-  if(!localStorage.getItem('pnl_pwd_hash')) {
-    localStorage.setItem('pnl_pwd_hash', await sha256('Biz@Secure2025'));
+
+  // Pull auth data from Supabase so all devices stay in sync
+  const [cloudHash, cloudTotp] = await Promise.all([
+    sbAuthGet('auth_pwd_hash'),
+    sbAuthGet('auth_totp_secret')
+  ]);
+  if (cloudHash) localStorage.setItem('pnl_pwd_hash', cloudHash);
+  if (cloudTotp) localStorage.setItem('pnl_totp_secret', cloudTotp);
+
+  if (!localStorage.getItem('pnl_pwd_hash')) {
+    const defaultHash = await sha256('Biz@Secure2025');
+    localStorage.setItem('pnl_pwd_hash', defaultHash);
+    // Push default to cloud so other devices get it
+    sbAuthUpsert('auth_pwd_hash', defaultHash);
     document.getElementById('pwdFirstNote').style.display='block';
   }
   showPhase('p1');
@@ -434,7 +470,9 @@ async function doResetPassword() {
   const b=document.getElementById('newPwdB').value;
   if(!a||a.length<8) { document.getElementById('resetErr').textContent='Min 8 characters.'; return; }
   if(a!==b) { document.getElementById('resetErr').textContent='Passwords do not match.'; return; }
-  localStorage.setItem('pnl_pwd_hash', await sha256(a));
+  const hash = await sha256(a);
+  localStorage.setItem('pnl_pwd_hash', hash);
+  sbAuthUpsert('auth_pwd_hash', hash);
   clearFails();
   sessionStorage.setItem('pnl_authed','1');
   document.getElementById('authOverlay').remove();
@@ -503,8 +541,8 @@ async function tfaStep2() {
   const ok=await verifyTOTP(_pendingSecret,code);
   if(ok) {
     localStorage.setItem('pnl_totp_secret',_pendingSecret);
-    // Sync TOTP secret to Supabase so all devices share it
-    sbUpsert('totp_secret', _pendingSecret).catch(()=>{});
+    // Sync to cloud so all devices use same 2FA secret
+    sbAuthUpsert('auth_totp_secret', _pendingSecret);
     document.getElementById('tfa2').style.display='none';
     document.getElementById('tfa3').style.display='block';
     const btn=document.getElementById('btn2FASetup');
@@ -563,9 +601,11 @@ async function cpSetNew() {
   const b=document.getElementById('cpNewB').value;
   if(!a||a.length<8){ document.getElementById('cpStep3Err').textContent='Min 8 characters.'; return; }
   if(a!==b){ document.getElementById('cpStep3Err').textContent='Passwords do not match.'; return; }
-  localStorage.setItem('pnl_pwd_hash',await sha256(a));
+  const hash = await sha256(a);
+  localStorage.setItem('pnl_pwd_hash', hash);
+  sbAuthUpsert('auth_pwd_hash', hash);  // sync to cloud so all devices get new password
   closeCPModal();
-  if(typeof showAlert==='function') showAlert('Password changed successfully!','success');
+  if(typeof showAlert==='function') showAlert('Password changed successfully! All devices will use the new password.','success');
 }
 function cpOtpNav(el,i){ el.value=el.value.replace(/\D/,''); if(el.value&&i<5) el.parentElement.querySelectorAll('.cp-digit')[i+1].focus(); if(getOTP('cp').length===6) cpVerify2FA(); }
 function doLogout() { sessionStorage.removeItem('pnl_authed'); location.reload(); }
