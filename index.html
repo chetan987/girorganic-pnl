@@ -2476,30 +2476,60 @@ async function connectSupabase() {
   }
 }
 
+// Strip to essential fields only — cuts payload ~60%
+function slimMTR(r) { return { _month:r._month, orderId:r.orderId, txType:r.txType, sku:r.sku, qty:r.qty, itemPrice:r.itemPrice }; }
+function slimPay(r) { return { _month:r._month, orderId:r.orderId, type:r.type, sku:r.sku, qty:r.qty, productSales:r.productSales, shippingCredits:r.shippingCredits, promoRebates:r.promoRebates, sellingFees:r.sellingFees, fbaFees:r.fbaFees, otherTxnFees:r.otherTxnFees, total:r.total }; }
+
+async function sbUpsertSafe(key, value) {
+  // Returns true on success, false on timeout/error — never throws
+  try {
+    const ok = await sbUpsert(key, value);
+    return ok;
+  } catch(e) {
+    console.warn('sbUpsert failed for', key, e.message);
+    return false;
+  }
+}
+
 async function syncToCloud() {
   const { ok } = sbHeaders();
   if (!ok) return;
   setSyncStatus('⬆ Syncing…', 'var(--warn)');
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  let failed = 0;
+
   try {
-    // Config (small — always sync)
     await sbUpsert('config', S.config);
 
-    // MTR data — split by month to stay under 5MB per row
+    // MTR — slim rows, split by month, 150ms gap between upserts
     const mtrByMonth = {};
-    for (const r of S.raw.mtr) { const m = r._month||'unknown'; if (!mtrByMonth[m]) mtrByMonth[m]=[]; mtrByMonth[m].push(r); }
-    for (const [m, rows] of Object.entries(mtrByMonth)) await sbUpsert(`mtr_${m}`, rows);
+    for (const r of S.raw.mtr) { const m = r._month||'unknown'; if (!mtrByMonth[m]) mtrByMonth[m]=[]; mtrByMonth[m].push(slimMTR(r)); }
+    for (const [m, rows] of Object.entries(mtrByMonth)) {
+      const ok2 = await sbUpsertSafe(`mtr_${m}`, rows);
+      if (!ok2) failed++;
+      await delay(150);
+    }
 
-    // Payment data — split by month
+    // Payment — slim rows, split by month, 150ms gap
     const payByMonth = {};
-    for (const r of S.raw.payment) { const m = r._month||'unknown'; if (!payByMonth[m]) payByMonth[m]=[]; payByMonth[m].push(r); }
-    for (const [m, rows] of Object.entries(payByMonth)) await sbUpsert(`pay_${m}`, rows);
+    for (const r of S.raw.payment) { const m = r._month||'unknown'; if (!payByMonth[m]) payByMonth[m]=[]; payByMonth[m].push(slimPay(r)); }
+    for (const [m, rows] of Object.entries(payByMonth)) {
+      const ok2 = await sbUpsertSafe(`pay_${m}`, rows);
+      if (!ok2) failed++;
+      await delay(150);
+    }
 
     const now = new Date().toLocaleString('en-IN');
-    setSyncStatus(`✅ Synced ${now}`, 'var(--pos)');
-    setSyncLog(`<div class="alert success" style="margin-top:6px">☁ Last sync: ${now} · MTR months: ${Object.keys(mtrByMonth).length} · Payment months: ${Object.keys(payByMonth).length}</div>`);
+    if (failed === 0) {
+      setSyncStatus(`✅ Synced ${now}`, 'var(--pos)');
+      setSyncLog(`<div class="alert success" style="margin-top:6px">☁ Last sync: ${now} · MTR: ${Object.keys(mtrByMonth).length} months · Payment: ${Object.keys(payByMonth).length} months</div>`);
+    } else {
+      setSyncStatus(`⚠ Partial sync ${now}`, 'var(--warn)');
+      setSyncLog(`<div class="alert warn" style="margin-top:6px">⚠ ${failed} month(s) timed out. Data is saved locally. Try <strong>Force Push</strong> again — Supabase free tier sometimes needs a retry.</div>`);
+    }
   } catch(e) {
     setSyncStatus('❌ Sync failed', 'var(--neg)');
-    showAlert('Sync failed: ' + e.message, 'error');
+    showAlert('Sync failed: ' + e.message + ' — data is safe in browser. Try again.', 'error');
   }
 }
 
