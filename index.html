@@ -3087,6 +3087,8 @@ async function syncToCloud() {
       if (!ok2) failed++;
       await delay(150);
     }
+    // Manifest: store list of month keys so syncFromCloud avoids LIKE queries
+    await sbUpsertSafe(`${pfx}mtr_manifest`, Object.keys(mtrByMonth));
 
     // Payment — slim rows, split by month, 150ms gap
     const payByMonth = {};
@@ -3096,6 +3098,8 @@ async function syncToCloud() {
       if (!ok2) failed++;
       await delay(150);
     }
+    // Manifest for payment months
+    await sbUpsertSafe(`${pfx}pay_manifest`, Object.keys(payByMonth));
 
     const now = new Date().toLocaleString('en-IN');
     if (failed === 0) {
@@ -3123,13 +3127,32 @@ async function sbFetch(path) {
   return r.json();
 }
 
+let _syncFromCloudRunning = false;
 async function syncFromCloud() {
   const { ok } = sbHeaders();
   if (!ok) return;
+  // Prevent concurrent runs — debounce if already in flight
+  if (_syncFromCloudRunning) return;
+  _syncFromCloudRunning = true;
   setSyncStatus('⬇ Loading…', 'var(--warn)');
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+
+  // Fetch with single retry on timeout (57014)
+  async function fetchWithRetry(fn, label) {
+    try { return await fn(); }
+    catch(e) {
+      if (e.message && e.message.includes('57014')) {
+        setSyncStatus(`⏳ Retrying ${label}…`, 'var(--warn)');
+        await delay(2000);
+        return await fn(); // one retry
+      }
+      throw e;
+    }
+  }
+
   try {
     const pfx = sbMktPrefix();
-    const cfg = await sbGet(pfx + 'config');
+    const cfg = await fetchWithRetry(() => sbGet(pfx + 'config'), 'config');
     if (cfg) {
       const sb = S.config.supabase;
       Object.assign(S.config, cfg);
@@ -3137,17 +3160,48 @@ async function syncFromCloud() {
       localStorage.setItem(lsKey('girorganic_pnl_config'), JSON.stringify(S.config));
     }
 
-    // Pull TOTP secret — sync 2FA across devices (shared, not per-marketplace)
+    // TOTP shared across marketplaces
     const totpSecret = await sbGet('totp_secret');
     if (totpSecret && typeof totpSecret === 'string') {
       localStorage.setItem('pnl_totp_secret', totpSecret);
     }
 
-    const allRows    = await sbFetch(`pnl_store?key=like.${pfx}mtr_%25&select=key,value`);
-    const allPayRows = await sbFetch(`pnl_store?key=like.${pfx}pay_%25&select=key,value`);
+    // Use manifests for exact key lookups — avoids slow LIKE table scans
+    // Fall back to LIKE only if manifest missing (legacy data before this version)
+    await delay(200);
+    const mtrManifest = await sbGet(`${pfx}mtr_manifest`);
+    await delay(200);
+    const payManifest = await sbGet(`${pfx}pay_manifest`);
 
-    if (Array.isArray(allRows) && allRows.length)    S.raw.mtr     = dedupMTR(allRows.flatMap(r => r.value || []));
-    if (Array.isArray(allPayRows) && allPayRows.length) S.raw.payment = dedupPay(allPayRows.flatMap(r => r.value || []));
+    let mtrRows = [], payRows = [];
+
+    if (Array.isArray(mtrManifest) && mtrManifest.length) {
+      for (const m of mtrManifest) {
+        const rows = await sbGet(`${pfx}mtr_${m}`);
+        if (Array.isArray(rows)) mtrRows.push(...rows);
+        await delay(150);
+      }
+    } else {
+      // Legacy fallback — LIKE query (may timeout on large datasets)
+      const allRows = await fetchWithRetry(
+        () => sbFetch(`pnl_store?key=like.${pfx}mtr_%25&select=key,value`), 'orders');
+      if (Array.isArray(allRows)) mtrRows = allRows.flatMap(r => r.value || []);
+    }
+
+    if (Array.isArray(payManifest) && payManifest.length) {
+      for (const m of payManifest) {
+        const rows = await sbGet(`${pfx}pay_${m}`);
+        if (Array.isArray(rows)) payRows.push(...rows);
+        await delay(150);
+      }
+    } else {
+      const allPayRows = await fetchWithRetry(
+        () => sbFetch(`pnl_store?key=like.${pfx}pay_%25&select=key,value`), 'payments');
+      if (Array.isArray(allPayRows)) payRows = allPayRows.flatMap(r => r.value || []);
+    }
+
+    if (mtrRows.length)  S.raw.mtr     = dedupMTR(mtrRows);
+    if (payRows.length)  S.raw.payment = dedupPay(payRows);
     saveRawData();
 
     const now = new Date().toLocaleString('en-IN');
@@ -3157,13 +3211,14 @@ async function syncFromCloud() {
     updateHeaderStatus();
     fillReconMonthFilter();
     fillPnLMonthFilter();
-    // Rebuild P&L with updated config (categories, skuMap, COGS)
     runReconciliation();
     buildPnL();
     renderPnLTab();
   } catch(e) {
     setSyncStatus('❌ ' + e.message, 'var(--neg)');
     console.error('syncFromCloud failed:', e);
+  } finally {
+    _syncFromCloudRunning = false;
   }
 }
 
