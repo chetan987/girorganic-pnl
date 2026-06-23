@@ -1456,6 +1456,11 @@ function normalizeCOMOrderRow(row) {
   const getNum = (...keys) => { const v = get(...keys); return parseFloat(v.replace(/,/g,'')) || 0; };
   const status = get('order-status','item-status');
   const qty = getNum('quantity');
+  const salesChannel = get('sales-channel');
+  const orderId = get('amazon-order-id');
+  // Skip MCF (Multi-Channel Fulfillment) orders — website orders fulfilled by Amazon warehouse.
+  // Payment received on website, not Amazon. Identified by: sales-channel="Non-Amazon" OR S01-/S0- order ID prefix.
+  if (salesChannel === 'Non-Amazon' || /^S0/i.test(orderId)) return null;
   // Skip cancelled orders (no revenue, no inventory movement)
   if (status.toLowerCase() === 'cancelled' || qty === 0) return null;
   return {
