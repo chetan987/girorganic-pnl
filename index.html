@@ -748,12 +748,12 @@ initAuth();
   <div class="row">
     <div class="col">
       <div class="card">
-        <h2>MTR Files (B2B + B2C)</h2>
-        <p class="help" style="margin-bottom:12px;">Upload one or more MTR CSV files from Seller Central → Reports → Tax → Monthly Tax Report. Both B2B and B2C files accepted. You can upload multiple months at once.</p>
+        <h2 id="mtrCardTitle">MTR Files (B2B + B2C)</h2>
+        <p id="mtrCardHelp" class="help" style="margin-bottom:12px;">Upload one or more MTR CSV files from Seller Central → Reports → Tax → Monthly Tax Report. Both B2B and B2C files accepted. You can upload multiple months at once.</p>
         <div class="drop-zone" id="mtrDrop" onclick="document.getElementById('mtrInput').click()">
           <div class="icon">📄</div>
-          <p><strong>Click or drag MTR CSV files here</strong></p>
-          <p style="margin-top:4px;font-size:12px;">Accepts: MTR_B2B-*.csv, MTR_B2C-*.csv</p>
+          <p><strong id="mtrDropText">Click or drag MTR CSV files here</strong></p>
+          <p id="mtrFileHint" style="margin-top:4px;font-size:12px;">Accepts: MTR_B2B-*.csv, MTR_B2C-*.csv</p>
           <input type="file" id="mtrInput" multiple accept=".csv" onchange="handleMTRUpload(event)">
         </div>
         <div id="mtrStatus" style="margin-top:10px;"></div>
@@ -761,11 +761,11 @@ initAuth();
     </div>
     <div class="col">
       <div class="card">
-        <h2>Payment / Settlement Report</h2>
-        <p class="help" style="margin-bottom:12px;">Download from Seller Central → Reports → Payments → All Statements → Custom Date. Upload one or more files. Handles Amazon's 13-row header automatically.</p>
+        <h2 id="payCardTitle">Payment / Settlement Report</h2>
+        <p id="payCardHelp" class="help" style="margin-bottom:12px;">Download from Seller Central → Reports → Payments → All Statements → Custom Date. Upload one or more files. Handles Amazon's 13-row header automatically.</p>
         <div class="drop-zone" id="payDrop" onclick="document.getElementById('payInput').click()">
           <div class="icon">💳</div>
-          <p><strong>Click or drag Payment Report CSV here</strong></p>
+          <p><strong id="payDropText">Click or drag Payment Report CSV here</strong></p>
           <p style="margin-top:4px;font-size:12px;">Accepts: .csv or .xlsx</p>
           <input type="file" id="payInput" multiple accept=".csv,.xlsx" onchange="handlePayUpload(event)">
         </div>
@@ -787,7 +787,7 @@ initAuth();
         </select>
       </div>
     </div>
-    <p class="help" style="margin-bottom:14px;">Enter total Amazon.in ad spend (SP + SB + SD) per month <strong>excluding GST</strong>. Values auto-save on every change.</p>
+    <p id="adSpendHelp" class="help" style="margin-bottom:14px;">Enter total Amazon.in ad spend (SP + SB + SD) per month <strong>excluding GST</strong>. Values auto-save on every change.</p>
     <div id="adSpendTable"></div>
   </div>
 
@@ -1212,6 +1212,7 @@ function onMarketplaceChange() {
   fillReconMonthFilter();
   fillPnLMonthFilter();
   renderPnLTab();
+  renderUploadTabLabels();
   const mktLabel = { IN: 'Amazon.in', COM: 'Amazon.com', WEB: 'Website' }[S.marketplace];
   showAlert(`Switched to ${mktLabel}. Upload the relevant files for this platform.`, 'info');
 }
@@ -1328,8 +1329,16 @@ function importConfig(e) {
 // ═══════════════════════════════════════════════════════════════════
 function parseDate(s) {
   if (!s) return null;
-  // Formats: "15 Apr 2025", "15-Apr-2025", "Apr 15, 2025", "2025-04-15", "15 Apr 2025 03:00:00 AM UTC"
-  const clean = s.toString().replace(' UTC','').replace('Sept','Sep').replace(/-/g,' ');
+  const str = s.toString().trim();
+  // ISO format: "2025-04-19T18:35:42+00:00" — pass directly, don't mangle hyphens
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+    const d = new Date(str);
+    return isNaN(d) ? null : d;
+  }
+  // COM date: "Apr 1, 2025 12:42:35 AM PDT" — strip timezone abbrev
+  const noTZ = str.replace(/\s+[A-Z]{2,4}$/, '').replace(' UTC','').replace('Sept','Sep');
+  // IN formats: "15 Apr 2025", "15-Apr-2025", "Apr 15, 2025", "2025-04-15"
+  const clean = noTZ.replace(/-/g,' ');
   const d = new Date(clean);
   return isNaN(d) ? null : d;
 }
@@ -1440,6 +1449,50 @@ function parsePaymentCSV(text) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// COM-SPECIFIC PARSERS (All Orders Report — tab-delimited TXT)
+// ═══════════════════════════════════════════════════════════════════
+function normalizeCOMOrderRow(row) {
+  const get = (...keys) => { for (const k of keys) { const v = row[k]; if (v !== undefined && v !== null && v.toString().trim() !== '') return v.toString().trim(); } return ''; };
+  const getNum = (...keys) => { const v = get(...keys); return parseFloat(v.replace(/,/g,'')) || 0; };
+  const status = get('order-status','item-status');
+  const qty = getNum('quantity');
+  // Skip cancelled orders (no revenue, no inventory movement)
+  if (status.toLowerCase() === 'cancelled' || qty === 0) return null;
+  return {
+    orderId: get('amazon-order-id'),
+    orderDate: get('purchase-date'),
+    txType: 'Shipment',  // All Orders = shipped items
+    sku: get('sku'),
+    qty: qty,
+    itemPrice: getNum('item-price'),
+    description: get('product-name'),
+    asin: get('asin'),
+    city: get('ship-city'),
+    state: get('ship-state'),
+    _month: '',  // filled after
+  };
+}
+
+function parseCOMOrderTSV(text) {
+  // Tab-delimited, first row is header
+  const lines = text.split('\n').filter(l => l.trim());
+  if (!lines.length) return [];
+  const headers = lines[0].split('\t').map(h => h.trim().replace(/^"|"$/g, ''));
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split('\t').map(v => v.trim().replace(/^"|"$/g, ''));
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = vals[idx] || ''; });
+    const n = normalizeCOMOrderRow(obj);
+    if (!n || !n.orderId) continue;
+    const d = parseDate(n.orderDate);
+    n._month = d ? monthYear(d) : '';
+    if (n._month) rows.push(n);
+  }
+  return rows;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // FILE UPLOAD HANDLERS
 // ═══════════════════════════════════════════════════════════════════
 function handleMTRUpload(e) {
@@ -1450,7 +1503,12 @@ function handleMTRUpload(e) {
   files.forEach(f => {
     const reader = new FileReader();
     reader.onload = ev => {
-      newRows.push(...parseMTRCSV(ev.target.result, f.name));
+      // COM uses All Orders Report (TSV); IN uses MTR CSV
+      if (S.marketplace === 'COM') {
+        newRows.push(...parseCOMOrderTSV(ev.target.result));
+      } else {
+        newRows.push(...parseMTRCSV(ev.target.result, f.name));
+      }
       loaded++;
       if (loaded === files.length) {
         mergeMTRRows(newRows);
@@ -1480,6 +1538,8 @@ function handlePayUpload(e) {
   files.forEach(f => {
     const reader = new FileReader();
     reader.onload = ev => {
+      // COM Unified Transaction CSV and IN Payment CSV both use parsePaymentCSV
+      // (same column names; header detection handles the 4-line preamble)
       newRows.push(...parsePaymentCSV(ev.target.result));
       loaded++;
       if (loaded === files.length) {
@@ -1501,11 +1561,54 @@ function handlePayUpload(e) {
   });
 }
 
+function renderUploadTabLabels() {
+  const isCOM = S.marketplace === 'COM';
+  const isWEB = S.marketplace === 'WEB';
+  // Left card (MTR / All Orders)
+  const mtrTitle = isCOM ? 'All Orders Report (.txt)' : isWEB ? 'Orders / Transaction File' : 'MTR Files (B2B + B2C)';
+  const mtrHelp = isCOM
+    ? 'Download from Seller Central → Reports → Fulfillment → Amazon-fulfilled Shipments → By Order. Export as Tab-separated TXT. Upload one or more months.'
+    : isWEB
+    ? 'Upload your website order export (CSV/TXT). Contact support to add a custom parser for your platform (Shopify, WooCommerce, etc.).'
+    : 'Upload one or more MTR CSV files from Seller Central → Reports → Tax → Monthly Tax Report. Both B2B and B2C files accepted. You can upload multiple months at once.';
+  const mtrDropText = isCOM ? 'Click or drag All Orders Report (.txt) here' : isWEB ? 'Click or drag orders file here' : 'Click or drag MTR CSV files here';
+  const mtrAccept = isCOM ? '.txt,.csv,.tsv' : '.csv';
+  const mtrFileHint = isCOM ? 'Accepts: All Orders Report .txt (tab-separated)' : isWEB ? 'Accepts: .csv or .txt' : 'Accepts: MTR_B2B-*.csv, MTR_B2C-*.csv';
+
+  // Right card (Payment)
+  const payTitle = isCOM ? 'Unified Transaction Report (CSV)' : isWEB ? 'Payment / Settlement Report' : 'Payment / Settlement Report';
+  const payHelp = isCOM
+    ? 'Download from Seller Central → Reports → Payments → Transaction View → Custom. Select "All" transaction types, download CSV. Upload one or more months.'
+    : isWEB
+    ? 'Upload your website payment/settlement export. Format depends on your payment gateway.'
+    : 'Download from Seller Central → Reports → Payments → All Statements → Custom Date. Upload one or more files. Handles Amazon\'s 13-row header automatically.';
+  const payDropText = isCOM ? 'Click or drag Unified Transaction CSV here' : 'Click or drag Payment Report CSV here';
+
+  // Ad spend label
+  const adSpendHelp = isCOM
+    ? 'Enter total Amazon.com ad spend (SP + SB + SD) per month <strong>excluding tax</strong>. Values auto-save on every change.'
+    : 'Enter total Amazon.in ad spend (SP + SB + SD) per month <strong>excluding GST</strong>. Values auto-save on every change.';
+
+  const e = id => document.getElementById(id);
+  const mtrCard = e('mtrCardTitle'); if (mtrCard) mtrCard.textContent = mtrTitle;
+  const mtrHelpEl = e('mtrCardHelp'); if (mtrHelpEl) mtrHelpEl.innerHTML = mtrHelp;
+  const mtrDT = e('mtrDropText'); if (mtrDT) mtrDT.textContent = mtrDropText;
+  const mtrFH = e('mtrFileHint'); if (mtrFH) mtrFH.textContent = mtrFileHint;
+  const mtrInp = e('mtrInput'); if (mtrInp) mtrInp.accept = mtrAccept;
+
+  const payCardTitle = e('payCardTitle'); if (payCardTitle) payCardTitle.textContent = payTitle;
+  const payHelpEl = e('payCardHelp'); if (payHelpEl) payHelpEl.innerHTML = payHelp;
+  const payDT = e('payDropText'); if (payDT) payDT.textContent = payDropText;
+  const adHelpEl = e('adSpendHelp'); if (adHelpEl) adHelpEl.innerHTML = adSpendHelp;
+}
+
 function renderMTRStatus(files, newCount) {
+  const isCOM = S.marketplace === 'COM';
+  const label = isCOM ? 'All Orders' : 'MTR';
   const months = [...new Set(S.raw.mtr.map(r => r._month).filter(Boolean))].sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
   document.getElementById('mtrStatus').innerHTML = `
     <div class="alert success">
-      ✅ Added <strong>${newCount}</strong> new rows from <strong>${files.length}</strong> file(s) · <strong>${S.raw.mtr.length.toLocaleString()}</strong> total MTR rows in memory<br>
+      ✅ Added <strong>${newCount}</strong> new rows from <strong>${files.length}</strong> file(s) · <strong>${S.raw.mtr.length.toLocaleString()}</strong> total ${label} rows in memory<br>
       All months: ${months.map(m => `<span class="chip">${m}</span>`).join('')}
     </div>`;
 }
@@ -1530,11 +1633,14 @@ function renderUploadSummary() {
   const payMonths = [...new Set(S.raw.payment.map(r => r._month).filter(Boolean))];
   const allMonths = [...new Set([...mtrMonths, ...payMonths])].sort();
 
+  const isCOM = S.marketplace === 'COM';
+  const mtrLabel = isCOM ? 'All Orders Rows' : 'MTR Rows';
+  const ordersLabel = isCOM ? 'Unique Orders (Report)' : 'Unique Orders (MTR)';
   let html = '<div class="stat-cards">';
-  html += `<div class="stat"><div class="label">MTR Rows</div><div class="value">${S.raw.mtr.length.toLocaleString()}</div><div class="sub">${mtrMonths.length} months</div></div>`;
-  html += `<div class="stat"><div class="label">Payment Rows</div><div class="value">${S.raw.payment.length.toLocaleString()}</div><div class="sub">${payMonths.length} months</div></div>`;
-  const orderIds = new Set(S.raw.mtr.filter(r => r.txType.toLowerCase() !== 'cancel').map(r => r.orderId));
-  html += `<div class="stat"><div class="label">Unique Orders (MTR)</div><div class="value">${orderIds.size.toLocaleString()}</div></div>`;
+  html += `<div class="stat"><div class="label">${mtrLabel}</div><div class="value">${S.raw.mtr.length.toLocaleString()}</div><div class="sub">${mtrMonths.length} months</div></div>`;
+  html += `<div class="stat"><div class="label">Transaction Rows</div><div class="value">${S.raw.payment.length.toLocaleString()}</div><div class="sub">${payMonths.length} months</div></div>`;
+  const orderIds = new Set(S.raw.mtr.filter(r => (r.txType||'').toLowerCase() !== 'cancel').map(r => r.orderId));
+  html += `<div class="stat"><div class="label">${ordersLabel}</div><div class="value">${orderIds.size.toLocaleString()}</div></div>`;
   const payOrderIds = new Set(S.raw.payment.filter(r => r.type === 'Order').map(r => r.orderId));
   html += `<div class="stat"><div class="label">Settled Orders</div><div class="value">${payOrderIds.size.toLocaleString()}</div></div>`;
   html += '</div>';
@@ -3400,6 +3506,7 @@ function init() {
   loadRawData();
   populateCogsSelects();
   renderAll();
+  renderUploadTabLabels();
   // Restore Supabase fields
   const { url, anonKey } = S.config.supabase;
   if (url) document.getElementById('sbUrl').value = url;
