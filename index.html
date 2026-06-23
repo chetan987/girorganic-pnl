@@ -3094,7 +3094,7 @@ const AN_COLORS = ['#0B3D3D','#2563eb','#e67e22','#1e7a4c','#c0392b','#7c3aed','
 function renderAnalysis() {
   if (!S.pnl) {
     document.getElementById('anSummaryCards').innerHTML = '<div class="empty">Calculate P&L first to see analysis.</div>';
-    document.getElementById('anBreakdownTable').innerHTML = '';
+    document.getElementById('anGeoBreakdown').innerHTML = '';
     const canvas = document.getElementById('anChart');
     if (canvas) canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
     return;
