@@ -118,10 +118,8 @@ input[type=number] { width: 110px; }
 /* scrollable table containers */
 .tbl-scroll { max-height: 420px; overflow-y: auto; }
 /* ── HELP TOOLTIP ── */
-.help-icon { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#e8f0ee; color:var(--teal); font-size:10px; font-weight:700; cursor:pointer; margin-left:6px; border:1px solid var(--teal); flex-shrink:0; position:relative; vertical-align:middle; }
-.help-icon:hover .help-tip { display:block; }
-.help-tip { display:none; position:absolute; left:22px; top:-4px; background:#1a2b2b; color:#fff; font-size:11px; line-height:1.5; padding:8px 12px; border-radius:8px; width:260px; z-index:999; font-weight:400; pointer-events:none; box-shadow:0 4px 16px rgba(0,0,0,.3); }
-.help-tip::before { content:''; position:absolute; left:-5px; top:8px; border:5px solid transparent; border-right-color:#1a2b2b; border-left:none; }
+.help-icon { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#e8f0ee; color:var(--teal); font-size:10px; font-weight:700; cursor:help; margin-left:6px; border:1px solid var(--teal); flex-shrink:0; vertical-align:middle; }
+#globalTooltip { display:none; position:fixed; background:#1a2b2b; color:#fff; font-size:12px; line-height:1.6; padding:10px 14px; border-radius:8px; max-width:300px; z-index:999999; pointer-events:none; box-shadow:0 4px 20px rgba(0,0,0,.4); white-space:normal; word-break:break-word; }
 .card-header { display:flex; align-items:center; gap:4px; margin-bottom:14px; }
 .card-header h2 { margin-bottom:0; }
 /* ── CHART ── */
@@ -698,6 +696,8 @@ function doLogout() { sessionStorage.removeItem('pnl_authed'); location.reload()
 
 initAuth();
 </script>
+
+<div id="globalTooltip"></div>
 
 <header>
   <h1>📊 Business Analytics Dashboard</h1>
@@ -2341,7 +2341,8 @@ function buildPnL() {
     const expansion = expandSKU(row.sku, row.qty, row.productSales, row.sellingFees, row.fbaFees, row.otherTxnFees, row.promoRebates, row.shippingCredits, row.total, cogsMap);
 
     for (const exp of expansion) {
-      const p = exp.product;
+      // Normalize dashes so "Ghee – 250 ml" and "Ghee - 250 ml" merge to same key
+      const p = exp.product.replace(/[–—]/g, '-').trim();
       if (!byMonth[my].products[p]) {
         byMonth[my].products[p] = { units: 0, productSales: 0, orderSales: 0, returnSales: 0, promoRebates: 0, shippingCredits: 0, sellingFees: 0, fbaFees: 0, otherTxnFees: 0, total: 0, cogs: 0, flaggedRevenue: 0, flaggedUnits: 0 };
       }
@@ -2384,7 +2385,7 @@ function buildPnL() {
     for (const item of order.items) {
       const expansion = expandSKU(item.sku, item.qty, item.price, 0, 0, 0, 0, 0, item.price, cogsMap);
       for (const exp of expansion) {
-        const p = exp.product;
+        const p = exp.product.replace(/[–—]/g, '-').trim();
         if (!byMonth[my].products[p]) {
           byMonth[my].products[p] = { units:0, productSales:0, promoRebates:0, shippingCredits:0, sellingFees:0, fbaFees:0, otherTxnFees:0, total:0, cogs:0, flaggedRevenue:0, flaggedUnits:0 };
         }
@@ -2634,7 +2635,9 @@ function renderProductTable(data, grossSales, viewMode, my, catFilter) {
       <h2 style="margin-bottom:0">Product Breakdown — ${title}</h2>
       <input type="text" placeholder="🔍 Search product or category…" oninput="pnlFilterTable(this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;width:240px;outline:none" id="pnlSearchInput">
     </div>
-    <div class="tbl-wrap tbl-scroll"><table id="pnlProdTable">${thead}<tbody>${body}</tbody></table></div></div>`;
+    <div class="tbl-wrap tbl-scroll"><table id="pnlProdTable">${thead}<tbody>${body}</tbody></table></div>
+    <p class="help" style="margin-top:8px">⚠ <strong>Contribution here = Released − COGS per product.</strong> It excludes account-level charges (Storage Fees, Easy Ship/MFN Fees, Other Adjustments) which are shown in the P&L Waterfall above but cannot be attributed to individual products. Sum of all product contributions will be higher than Net Released in the waterfall by those charges.</p>
+    </div>`;
 }
 
 function renderFYPnL(div, viewMode, catFilter) {
@@ -2747,7 +2750,33 @@ function exportPnL() {
 // ═══════════════════════════════════════════════════════════════════
 // FORMATTING HELPERS
 // ═══════════════════════════════════════════════════════════════════
-function hi(tip) { return `<span class="help-icon">ⓘ<span class="help-tip">${tip}</span></span>`; }
+function hi(tip) {
+  const safe = tip.replace(/"/g, '&quot;');
+  return `<span class="help-icon" data-tip="${safe}" onmouseenter="showTip(event,this)" onmouseleave="hideTip()">ⓘ</span>`;
+}
+function showTip(e, el) {
+  const t = document.getElementById('globalTooltip');
+  if (!t) return;
+  t.textContent = el.dataset.tip;
+  t.style.display = 'block';
+  positionTip(e);
+}
+function positionTip(e) {
+  const t = document.getElementById('globalTooltip');
+  if (!t || t.style.display === 'none') return;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const tw = t.offsetWidth || 300, th = t.offsetHeight || 60;
+  let x = e.clientX + 14, y = e.clientY - th - 10;
+  if (x + tw > vw - 10) x = e.clientX - tw - 14;
+  if (y < 8) y = e.clientY + 18;
+  t.style.left = x + 'px';
+  t.style.top  = y + 'px';
+}
+function hideTip() {
+  const t = document.getElementById('globalTooltip');
+  if (t) t.style.display = 'none';
+}
+document.addEventListener('mousemove', positionTip);
 
 function fmt(n) { return (Math.round((n||0)*100)/100).toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:0}); }
 function fmt1(n) { return (Math.round((n||0)*10)/10).toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:1}); }
