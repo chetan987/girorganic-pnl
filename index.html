@@ -1157,7 +1157,7 @@ function clearRawData() {
 
 // Merge new rows into existing, dedup by key fields
 function mtrKey(r) { return (r.orderId||'') + '|' + (r.sku||'') + '|' + (r._month||'') + '|' + (r.txType||''); }
-function payKey(r) { return (r.settlementId||'') + '|' + (r.orderId||'') + '|' + (r.sku||'') + '|' + (r.type||'') + '|' + (r.total||''); }
+function payKey(r) { return (r.orderId||'') + '|' + (r.sku||'') + '|' + (r.type||'') + '|' + String(r.total||'') + '|' + (r._month||''); }
 
 function dedupMTR(rows) { const m = new Map(); for (const r of rows) m.set(mtrKey(r), r); return [...m.values()]; }
 function dedupPay(rows) { const m = new Map(); for (const r of rows) m.set(payKey(r), r); return [...m.values()]; }
