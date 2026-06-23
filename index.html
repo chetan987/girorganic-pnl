@@ -703,6 +703,14 @@ initAuth();
   <h1>📊 Business Analytics Dashboard</h1>
   <div class="hright">
     <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);padding:5px 10px;border-radius:8px">
+      <span style="font-size:11px;color:#a8d0d0;font-weight:600">PLATFORM</span>
+      <select id="mktSelector" onchange="onMarketplaceChange()" style="background:transparent;border:none;color:#fff;font-size:13px;font-weight:700;cursor:pointer;outline:none">
+        <option value="IN">🇮🇳 Amazon.in</option>
+        <option value="COM">🇺🇸 Amazon.com</option>
+        <option value="WEB">🌐 Website</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);padding:5px 10px;border-radius:8px">
       <span style="font-size:11px;color:#a8d0d0;font-weight:600">FINANCIAL YEAR</span>
       <select id="fySelector" onchange="onFYChange()" style="background:transparent;border:none;color:#fff;font-size:13px;font-weight:700;cursor:pointer;outline:none">
         <option value="FY2025-26">FY 2025-26 (Apr 25 – Mar 26)</option>
@@ -1024,7 +1032,7 @@ initAuth();
         </div>
 
         <div class="field" style="margin-bottom:12px">
-          <label>Ad Spend % of Revenue (₹)</label>
+          <label>Ad Spend % of Revenue (${currSym()})</label>
           <input type="number" id="calcAdPct" step="0.1" min="0" value="10" style="width:100%" oninput="calcRun()" placeholder="e.g. 10">
           <p class="help" style="margin-top:4px">Auto-filled from reference month. Edit to test scenarios.</p>
         </div>
@@ -1156,6 +1164,7 @@ const FY_YEARS = [2024, 2025, 2026, 2027];
 // STATE
 // ═══════════════════════════════════════════════════════════════════
 const S = {
+  marketplace: 'IN',   // 'IN' | 'COM' | 'WEB'
   config: {
     categories: [],          // ["Ghee", "Oils", "Combo", ...]
     skuMap: {},              // { sku: productName }
@@ -1176,23 +1185,52 @@ const S = {
   pnl: null,        // pnl result
 };
 
+// ── MARKETPLACE HELPERS ──
+function currSym() { return S.marketplace === 'COM' ? '$' : '₹'; }
+function mktSuffix() { return S.marketplace === 'IN' ? '' : '_' + S.marketplace; }
+function lsKey(base) { return base + mktSuffix(); }
+function sbMktPrefix() { return S.marketplace === 'IN' ? '' : S.marketplace.toLowerCase() + '_'; }
+
+function onMarketplaceChange() {
+  S.marketplace = document.getElementById('mktSelector').value;
+  localStorage.setItem('pnl_marketplace', S.marketplace);
+  S.raw.mtr = [];
+  S.raw.payment = [];
+  S.pnl = null;
+  S.recon = null;
+  // Reset config to defaults, then load for new marketplace
+  S.config = {
+    categories: [], skuMap: {}, productCategory: {}, combos: {}, cogs: {}, adSpend: {},
+    supabase: S.config.supabase,
+  };
+  loadConfig();
+  loadRawData();
+  buildPnL();
+  renderAll();
+  renderUploadSummary();
+  updateHeaderStatus();
+  fillReconMonthFilter();
+  fillPnLMonthFilter();
+  renderPnLTab();
+  const mktLabel = { IN: 'Amazon.in', COM: 'Amazon.com', WEB: 'Website' }[S.marketplace];
+  showAlert(`Switched to ${mktLabel}. Upload the relevant files for this platform.`, 'info');
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // STORAGE
 // ═══════════════════════════════════════════════════════════════════
 let _syncTimer = null;
 function saveConfig() {
-  localStorage.setItem('girorganic_pnl_config', JSON.stringify(S.config));
+  localStorage.setItem(lsKey('girorganic_pnl_config'), JSON.stringify(S.config));
   if (S.config.supabase?.url && S.config.supabase?.anonKey) {
-    // Config (small) — push immediately so category/SKU changes survive cache clear
-    sbUpsert('config', S.config).catch(() => {});
-    // Data (large) — debounce to avoid hammering Supabase on rapid changes
+    sbUpsert(sbMktPrefix() + 'config', S.config).catch(() => {});
     clearTimeout(_syncTimer);
     _syncTimer = setTimeout(() => syncToCloud(), 2000);
   }
 }
 function loadConfig() {
   try {
-    const saved = localStorage.getItem('girorganic_pnl_config');
+    const saved = localStorage.getItem(lsKey('girorganic_pnl_config'));
     if (saved) Object.assign(S.config, JSON.parse(saved));
   } catch(e) {}
 }
@@ -1213,8 +1251,8 @@ function saveRawData() {
       if (!payByMonth[m]) payByMonth[m] = [];
       payByMonth[m].push(row);
     }
-    localStorage.setItem('girorganic_mtr_data', JSON.stringify(mtrByMonth));
-    localStorage.setItem('girorganic_pay_data', JSON.stringify(payByMonth));
+    localStorage.setItem(lsKey('girorganic_mtr_data'), JSON.stringify(mtrByMonth));
+    localStorage.setItem(lsKey('girorganic_pay_data'), JSON.stringify(payByMonth));
   } catch(e) {
     // localStorage quota exceeded — data too large, skip silently
     console.warn('Could not persist raw data to localStorage:', e.message);
@@ -1222,8 +1260,8 @@ function saveRawData() {
 }
 function loadRawData() {
   try {
-    const mtrRaw = localStorage.getItem('girorganic_mtr_data');
-    const payRaw = localStorage.getItem('girorganic_pay_data');
+    const mtrRaw = localStorage.getItem(lsKey('girorganic_mtr_data'));
+    const payRaw = localStorage.getItem(lsKey('girorganic_pay_data'));
     if (mtrRaw) {
       const byMonth = JSON.parse(mtrRaw);
       S.raw.mtr = Object.values(byMonth).flat();
@@ -1237,8 +1275,8 @@ function loadRawData() {
 function clearRawData() {
   S.raw.mtr = [];
   S.raw.payment = [];
-  localStorage.removeItem('girorganic_mtr_data');
-  localStorage.removeItem('girorganic_pay_data');
+  localStorage.removeItem(lsKey('girorganic_mtr_data'));
+  localStorage.removeItem(lsKey('girorganic_pay_data'));
   renderUploadSummary();
   updateHeaderStatus();
   document.getElementById('mtrStatus').innerHTML = '';
@@ -1529,13 +1567,13 @@ function renderAdSpendTable() {
     return `<div style="background:${hasVal?'#f0f7f0':'#f9f9f7'};border:1px solid ${hasVal?'#c3e0c8':'var(--border)'};border-radius:10px;padding:12px 14px">
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${shortMonth} ${year}</div>
       <div style="display:flex;align-items:center;gap:4px">
-        <span style="font-size:13px;color:var(--muted)">₹</span>
+        <span style="font-size:13px;color:var(--muted)">${currSym()}</span>
         <input type="number" step="1" min="0" value="${amt||''}" placeholder="0"
           style="width:100%;border:none;background:transparent;font-size:16px;font-weight:700;color:${hasVal?'var(--teal)':'var(--text)'};outline:none;padding:0"
           onchange="saveAdSpend('${my}', this.value); this.closest('div[style]').style.background=this.value>0?'#f0f7f0':'#f9f9f7'; this.closest('div[style]').style.borderColor=this.value>0?'#c3e0c8':'var(--border)'; this.style.color=this.value>0?'var(--teal)':'var(--text)'"
           oninput="this.onchange()">
       </div>
-      ${hasVal ? `<div style="font-size:10px;color:var(--pos);margin-top:3px">₹${fmtK(amt)}</div>` : ''}
+      ${hasVal ? `<div style="font-size:10px;color:var(--pos);margin-top:3px">${currSym()}${fmtK(amt)}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -1545,7 +1583,7 @@ function renderAdSpendTable() {
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#eeeee6;border-radius:8px">
       <span style="font-size:13px;font-weight:600;color:var(--teal)">FY Total Ad Spend</span>
-      <span style="font-size:18px;font-weight:700;color:var(--teal)">₹${fmt(total)}</span>
+      <span style="font-size:18px;font-weight:700;color:var(--teal)">${currSym()}${fmt(total)}</span>
     </div>`;
 }
 
@@ -1718,7 +1756,7 @@ function buildUnmappedCard(skus, prefix) {
   const cardId = prefix + 'UnmappedCard';
   const label = prefix === 'fy' ? 'across FY' : 'in this month';
   return `<div id="${cardId}" class="card" style="border-color:#f59e0b;margin-bottom:14px">
-    <h2 style="color:#92400e">⚠ ${skus.length} Unmapped SKU(s) ${label} — COGS is ₹0 for these</h2>
+    <h2 style="color:#92400e">⚠ ${skus.length} Unmapped SKU(s) ${label} — COGS is ${currSym()}0 for these</h2>
     <p style="font-size:12px;color:#78350f;margin-bottom:10px">
       For regular products: type/select a name → <strong>Map</strong>.<br>
       For combo listings (bundles): click <strong>+ Setup Combo</strong> to define components in SKU &amp; Combos tab.
@@ -1997,7 +2035,7 @@ function renderCogsTab() {
   const filterActive = catFilter || search;
 
   let html = `<div class="tbl-wrap"><table class="cogs-table">
-    <thead><tr><th>Product</th><th>Category</th><th class="r">COGS per Unit (₹) for ${my}</th><th class="r">Note</th></tr></thead><tbody>`;
+    <thead><tr><th>Product</th><th>Category</th><th class="r">COGS per Unit (${currSym()}) for ${my}</th><th class="r">Note</th></tr></thead><tbody>`;
 
   if (!products.length && filterActive) {
     html += `<tr><td colspan="4" class="empty" style="padding:24px">No products match the filter.</td></tr>`;
@@ -2017,7 +2055,7 @@ function renderCogsTab() {
         value="${displayVal}"
         placeholder="${isInherited ? inherited.value : ''}"
         style="width:130px;text-align:right;${isInherited ? 'border-color:#ccc;color:var(--muted)' : ''}"></td>
-      <td class="r inherited">${isInherited ? `${inherited.from} (₹${inherited.value})` : (direct !== undefined ? '<span style="color:var(--pos)">✓ Set</span>' : '—')}</td>
+      <td class="r inherited">${isInherited ? `${inherited.from} (${currSym()}${inherited.value})` : (direct !== undefined ? '<span style="color:var(--pos)">✓ Set</span>' : '—')}</td>
     </tr>`;
   }
 
@@ -2033,12 +2071,12 @@ function renderCogsTab() {
     for (const combo of combos) {
       const totalCogs = combo.components.reduce((sum, c) => sum + (cogsMap[c.product] || 0) * c.qty, 0);
       const breakdown = combo.components.map(c =>
-        `${c.qty}× ${c.product} (₹${cogsMap[c.product] || '?'})`
+        `${c.qty}× ${c.product} (${currSym()}${cogsMap[c.product] || '?'})`
       ).join(' + ');
       html += `<tr style="background:#f5f3ff">
         <td>${combo.name} <span class="badge blue">combo</span></td>
         <td><span class="badge blue">Combo</span></td>
-        <td class="r" style="color:#4338ca;font-weight:700">₹${totalCogs.toFixed(0)}</td>
+        <td class="r" style="color:#4338ca;font-weight:700">${currSym()}${totalCogs.toFixed(0)}</td>
         <td class="r inherited">${breakdown}</td>
       </tr>`;
     }
@@ -2233,12 +2271,12 @@ function renderReconTab() {
       <p class="help" style="margin-bottom:10px">These order IDs appear in your MTR report but have no matching row in the payment/settlement report. This could mean: payment will arrive in a future settlement period, the payment report doesn't cover the full date range, or there is a genuine issue. <strong>These orders are still included in P&L calculations (using MTR revenue as estimate) but are flagged.</strong></p>
       <div class="tbl-wrap tbl-scroll">
         <table>
-          <thead><tr><th>Order ID</th><th>MTR Month</th><th>Type</th><th>SKUs</th><th class="r">Est. Revenue (₹)</th></tr></thead>
+          <thead><tr><th>Order ID</th><th>MTR Month</th><th>Type</th><th>SKUs</th><th class="r">Est. Revenue (${currSym()})</th></tr></thead>
           <tbody>`;
     for (const o of fUnmatched) {
       const rev = o.items.reduce((s,i) => s + i.price, 0);
       const skus = [...new Set(o.items.map(i => i.sku))].join(', ');
-      html += `<tr class="flagged"><td><code>${o.orderId}</code></td><td>${o.month}</td><td>${o.txType}</td><td>${skus}</td><td class="r">₹${fmt(rev)}</td></tr>`;
+      html += `<tr class="flagged"><td><code>${o.orderId}</code></td><td>${o.month}</td><td>${o.txType}</td><td>${skus}</td><td class="r">${currSym()}${fmt(rev)}</td></tr>`;
     }
     html += '</tbody></table></div></div>';
   } else {
@@ -2470,16 +2508,16 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
   }
 
   let html = unmappedBanner + `<div class="stat-cards">
-    <div class="stat"><div class="label">Ordered Sales ${hi('Revenue from new orders placed this month — matches Amazon Seller Central "Ordered Product Sales". Excludes returns.')}</div><div class="value">₹${fmtK(t.orderSales)}</div><div class="sub">${Math.round(t.units)} units</div></div>
-    <div class="stat"><div class="label">Returns ${hi('Revenue lost to refunds/returns for orders placed this month. Ordered Sales minus Returns = Gross Sales.')}</div><div class="value neg">₹${fmtK(t.returnSales)}</div><div class="sub">${t.orderSales ? (t.returnSales/t.orderSales*100).toFixed(1) : 0}% return rate</div></div>
-    <div class="stat"><div class="label">Gross Sales ${hi('Ordered Sales minus Returns. This is your real net revenue after returns.')}</div><div class="value">₹${fmtK(t.grossSales)}</div><div class="sub">after returns</div></div>
-    <div class="stat"><div class="label">Net Sales ${hi('Gross Sales minus promotional discounts, plus any shipping credits Amazon collected from the buyer.')}</div><div class="value">₹${fmtK(t.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
-    <div class="stat"><div class="label">Discount ${hi('Promotional rebates — coupons, lightning deals, percentage-off promotions. Amazon deducts these from your payout.')}</div><div class="value neg">₹${fmtK(Math.abs(t.promoRebates))}</div><div class="sub">${t.grossSales ? (Math.abs(t.promoRebates)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Amazon Fees ${hi('Total of: Referral/closing fees + FBA fulfilment fees + storage fees + Easy Ship/MFN shipping fees + other transaction fees.')}</div><div class="value neg">₹${fmtK(Math.abs(t.totalFees))}</div><div class="sub">${t.grossSales ? (Math.abs(t.totalFees)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Released ${hi('Actual amount Amazon transferred to your bank account this month — after all fees, adjustments, and refunds. Cross-check with your Amazon payment statement.')}</div><div class="value ${t.netReleased >= 0 ? '' : 'neg'}">₹${fmtK(t.netReleased)}</div><div class="sub">${t.grossSales ? (t.netReleased/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">COGS ${hi('Cost of Goods Sold — your product manufacturing/purchase cost. Enter per-product rates in the COGS tab. Shows ₹0 if not entered.')}</div><div class="value neg">₹${fmtK(t.totalCogs)}</div><div class="sub">${t.grossSales ? (t.totalCogs/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Ad Spend ${hi('Total Amazon advertising spend (SP + SB + SD) for this month, excluding 18% GST. Enter in the Ad Spend section under COGS tab.')}</div><div class="value neg">₹${fmtK(adSpend)}</div><div class="sub">${t.grossSales ? (adSpend/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Net Contribution ${hi('Money left after Amazon releases payment, minus your COGS and ad spend. This is your actual profit before income tax.')}</div><div class="value ${t.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(t.netContrib)}</div><div class="sub">${t.marginPct.toFixed(1)}% margin</div></div>
+    <div class="stat"><div class="label">Ordered Sales ${hi('Revenue from new orders placed this month — matches Amazon Seller Central "Ordered Product Sales". Excludes returns.')}</div><div class="value">${currSym()}${fmtK(t.orderSales)}</div><div class="sub">${Math.round(t.units)} units</div></div>
+    <div class="stat"><div class="label">Returns ${hi('Revenue lost to refunds/returns for orders placed this month. Ordered Sales minus Returns = Gross Sales.')}</div><div class="value neg">${currSym()}${fmtK(t.returnSales)}</div><div class="sub">${t.orderSales ? (t.returnSales/t.orderSales*100).toFixed(1) : 0}% return rate</div></div>
+    <div class="stat"><div class="label">Gross Sales ${hi('Ordered Sales minus Returns. This is your real net revenue after returns.')}</div><div class="value">${currSym()}${fmtK(t.grossSales)}</div><div class="sub">after returns</div></div>
+    <div class="stat"><div class="label">Net Sales ${hi('Gross Sales minus promotional discounts, plus any shipping credits Amazon collected from the buyer.')}</div><div class="value">${currSym()}${fmtK(t.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
+    <div class="stat"><div class="label">Discount ${hi('Promotional rebates — coupons, lightning deals, percentage-off promotions. Amazon deducts these from your payout.')}</div><div class="value neg">${currSym()}${fmtK(Math.abs(t.promoRebates))}</div><div class="sub">${t.grossSales ? (Math.abs(t.promoRebates)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Amazon Fees ${hi('Total of: Referral/closing fees + FBA fulfilment fees + storage fees + Easy Ship/MFN shipping fees + other transaction fees.')}</div><div class="value neg">${currSym()}${fmtK(Math.abs(t.totalFees))}</div><div class="sub">${t.grossSales ? (Math.abs(t.totalFees)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Released ${hi('Actual amount Amazon transferred to your bank account this month — after all fees, adjustments, and refunds. Cross-check with your Amazon payment statement.')}</div><div class="value ${t.netReleased >= 0 ? '' : 'neg'}">${currSym()}${fmtK(t.netReleased)}</div><div class="sub">${t.grossSales ? (t.netReleased/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">COGS ${hi('Cost of Goods Sold — your product manufacturing/purchase cost. Enter per-product rates in the COGS tab. Shows ₹0 if not entered.')}</div><div class="value neg">${currSym()}${fmtK(t.totalCogs)}</div><div class="sub">${t.grossSales ? (t.totalCogs/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Ad Spend ${hi('Total Amazon advertising spend (SP + SB + SD) for this month, excluding 18% GST. Enter in the Ad Spend section under COGS tab.')}</div><div class="value neg">${currSym()}${fmtK(adSpend)}</div><div class="sub">${t.grossSales ? (adSpend/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Net Contribution ${hi('Money left after Amazon releases payment, minus your COGS and ad spend. This is your actual profit before income tax.')}</div><div class="value ${t.netContrib >= 0 ? 'pos' : 'neg'}">${currSym()}${fmtK(t.netContrib)}</div><div class="sub">${t.marginPct.toFixed(1)}% margin</div></div>
   </div>`;
 
   if (!catFilter) {
@@ -2499,7 +2537,7 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
       ${wfRow('Net Released by Amazon', t.netReleased, t.grossSales, 'subtotal')}
       ${wfRow('COGS (Cost of Goods Sold)', -t.totalCogs, t.grossSales, 'cost')}
       ${wfRow('Ad Spend (excl. GST)', -adSpend, t.grossSales, 'cost')}
-      <div class="wf-row total"><div class="wf-label">Net Contribution Margin</div><div class="wf-value">₹${fmt(t.netContrib)}</div><div class="wf-pct" style="color:#cfe">${t.marginPct.toFixed(1)}%</div></div>
+      <div class="wf-row total"><div class="wf-label">Net Contribution Margin</div><div class="wf-value">${currSym()}${fmt(t.netContrib)}</div><div class="wf-pct" style="color:#cfe">${t.marginPct.toFixed(1)}%</div></div>
     </div></div>`;
   }
 
@@ -2523,7 +2561,7 @@ function wfRow(label, value, base, type) {
   const color = value < 0 ? 'var(--neg)' : value > 0 ? 'var(--pos)' : 'var(--text)';
   return `<div class="${cls}">
     <div class="wf-label">${label}</div>
-    <div class="wf-value" style="${type !== 'subtotal' && type !== 'total' ? `color:${color}` : ''}">${value < 0 ? '−' : ''}₹${fmt(Math.abs(value))}</div>
+    <div class="wf-value" style="${type !== 'subtotal' && type !== 'total' ? `color:${color}` : ''}">${value < 0 ? '−' : ''}${currSym()}${fmt(Math.abs(value))}</div>
     <div class="wf-pct">${Math.abs(parseFloat(pct)).toFixed(1)}%</div>
   </div>`;
 }
@@ -2565,13 +2603,13 @@ function renderProductTable(data, grossSales, viewMode, my, catFilter) {
 
   const thead = `<thead><tr>
     <th>Product</th><th>Category</th>
-    <th class="r">Units</th><th class="r">Revenue (₹)</th><th class="r">ASP (₹)</th>
-    <th class="r">Discount (₹) ${hi('Promotional rebates deducted from your payout — coupons, deals, etc.')}</th>
-    <th class="r">Commission (₹) ${hi('Amazon referral + closing fees. Typically 5-15% depending on category.')}</th>
-    <th class="r">FBA Fee (₹) ${hi('Fulfilment by Amazon picking, packing and shipping fees per unit.')}</th>
-    <th class="r">Released (₹) ${hi('Net amount Amazon actually released to you = Sales − Discount − All Fees.')}</th>
-    <th class="r">COGS (₹) ${hi('Your product cost. Set in COGS tab. Shows ₹0 if not entered for this product.')}</th>
-    <th class="r">Contribution (₹) ${hi('Released amount minus COGS. Positive = profitable. Does not include ad spend (shown in summary above).')}</th>
+    <th class="r">Units</th><th class="r">Revenue (${currSym()})</th><th class="r">ASP (${currSym()})</th>
+    <th class="r">Discount (${currSym()}) ${hi('Promotional rebates deducted from your payout — coupons, deals, etc.')}</th>
+    <th class="r">Commission (${currSym()}) ${hi('Amazon referral + closing fees. Typically 5-15% depending on category.')}</th>
+    <th class="r">FBA Fee (${currSym()}) ${hi('Fulfilment by Amazon picking, packing and shipping fees per unit.')}</th>
+    <th class="r">Released (${currSym()}) ${hi('Net amount Amazon actually released to you = Sales − Discount − All Fees.')}</th>
+    <th class="r">COGS (${currSym()}) ${hi('Your product cost. Set in COGS tab. Shows ${currSym()}0 if not entered for this product.')}</th>
+    <th class="r">Contribution (${currSym()}) ${hi('Released amount minus COGS. Positive = profitable. Does not include ad spend (shown in summary above).')}</th>
     <th class="r">Margin % ${hi('Contribution ÷ Revenue × 100. Shows how much of each rupee of sales you keep after fees and COGS.')}</th>
   </tr></thead>`;
 
@@ -2584,14 +2622,14 @@ function renderProductTable(data, grossSales, viewMode, my, catFilter) {
       <td style="${nameStyle}">${p.name}${hasFlag?` <span class="badge warn">⚠ partial</span>${hi('This product has orders in your MTR that have no matching payment settlement yet. Revenue is included but Amazon has not released the money — could be pending settlement cycle or under review.')}`:''}${isDisc?' <span class="badge grey" style="font-size:10px">discontinued</span>':''}</td>
       <td><span class="badge ${p.category==='Combo'?'blue':p.category==='Discontinued'?'grey':p.category==='Uncategorized'?'grey':'green'}">${p.category}</span></td>
       <td class="r">${fmt1(p.units)}</td>
-      <td class="r">₹${fmt(p.productSales)}</td>
-      <td class="r">₹${fmt(p.asp||0)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(p.promoRebates))}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(p.sellingFees))}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(p.fbaFees))}</td>
-      <td class="r">₹${fmt(p.total)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(p.cogs)}</td>
-      <td class="r" style="color:${p.margin>=0?'var(--pos)':'var(--neg)'}">₹${fmt(p.margin)}</td>
+      <td class="r">${currSym()}${fmt(p.productSales)}</td>
+      <td class="r">${currSym()}${fmt(p.asp||0)}</td>
+      <td class="r" style="color:var(--neg)">${currSym()}${fmt(Math.abs(p.promoRebates))}</td>
+      <td class="r" style="color:var(--neg)">${currSym()}${fmt(Math.abs(p.sellingFees))}</td>
+      <td class="r" style="color:var(--neg)">${currSym()}${fmt(Math.abs(p.fbaFees))}</td>
+      <td class="r">${currSym()}${fmt(p.total)}</td>
+      <td class="r" style="color:var(--neg)">${currSym()}${fmt(p.cogs)}</td>
+      <td class="r" style="color:${p.margin>=0?'var(--pos)':'var(--neg)'}">${currSym()}${fmt(p.margin)}</td>
       <td class="r" style="color:${p.marginPct>=0?'var(--pos)':'var(--neg)'};font-weight:600">${p.marginPct.toFixed(1)}%</td>
     </tr>`;
   };
@@ -2600,11 +2638,11 @@ function renderProductTable(data, grossSales, viewMode, my, catFilter) {
     const m = r.productSales ? r.margin/r.productSales*100 : 0;
     return `<tr class="total-row" style="${bold?'':'background:#f4f4ec;font-weight:600'}">
       <td colspan="2" style="font-weight:${bold?700:600}">${label}</td>
-      <td class="r">${fmt1(r.units)}</td><td class="r">₹${fmt(r.productSales)}</td><td class="r">—</td>
-      <td class="r">₹${fmt(Math.abs(r.promoRebates))}</td><td class="r">₹${fmt(Math.abs(r.sellingFees))}</td>
-      <td class="r">₹${fmt(Math.abs(r.fbaFees))}</td><td class="r">₹${fmt(r.total)}</td>
-      <td class="r">₹${fmt(r.cogs)}</td>
-      <td class="r" style="color:${r.margin>=0?'var(--pos)':'var(--neg)'}">₹${fmt(r.margin)}</td>
+      <td class="r">${fmt1(r.units)}</td><td class="r">${currSym()}${fmt(r.productSales)}</td><td class="r">—</td>
+      <td class="r">${currSym()}${fmt(Math.abs(r.promoRebates))}</td><td class="r">${currSym()}${fmt(Math.abs(r.sellingFees))}</td>
+      <td class="r">${currSym()}${fmt(Math.abs(r.fbaFees))}</td><td class="r">${currSym()}${fmt(r.total)}</td>
+      <td class="r">${currSym()}${fmt(r.cogs)}</td>
+      <td class="r" style="color:${r.margin>=0?'var(--pos)':'var(--neg)'}">${currSym()}${fmt(r.margin)}</td>
       <td class="r" style="color:${m>=0?'var(--pos)':'var(--neg)'};">${m.toFixed(1)}%</td>
     </tr>`;
   };
@@ -2675,32 +2713,32 @@ function renderFYPnL(div, viewMode, catFilter) {
   const fyMargin = fy.grossSales ? fy.netContrib/fy.grossSales*100 : 0;
 
   html += `<div class="stat-cards">
-    <div class="stat"><div class="label">FY Gross Sales ${hi('Total revenue by order date across the full financial year. Matches Amazon Seller Central Sales Dashboard.')}</div><div class="value">₹${fmtK(fy.grossSales)}</div><div class="sub">${Math.round(fy.units)} units</div></div>
-    <div class="stat"><div class="label">FY Net Sales ${hi('Gross sales minus all promotional discounts plus shipping credits.')}</div><div class="value">₹${fmtK(fy.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
-    <div class="stat"><div class="label">Total Fees ${hi('All Amazon fees for the year: referral fees, FBA fees, storage, Easy Ship, and other transaction charges.')}</div><div class="value neg">₹${fmtK(Math.abs(fy.totalFees))}</div><div class="sub">${fy.grossSales ? (Math.abs(fy.totalFees)/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">FY Released ${hi('Total amount Amazon actually transferred to your bank account across the year. Cross-check with your Amazon payment statements.')}</div><div class="value ${fy.netReleased>=0?'':'neg'}">₹${fmtK(fy.netReleased)}</div><div class="sub">${fy.grossSales ? (fy.netReleased/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Total COGS ${hi('Total cost of all goods sold across the year.')}</div><div class="value neg">₹${fmtK(fy.totalCogs)}</div><div class="sub">${fy.grossSales ? (fy.totalCogs/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Total Ad Spend ${hi('Total Amazon advertising spend (SP + SB + SD) for the year, excluding 18% GST.')}</div><div class="value neg">₹${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">FY Net Contribution ${hi('Your actual profit for the year after all fees, COGS, and ad spend. Before income tax.')}</div><div class="value ${fy.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(fy.netContrib)}</div><div class="sub">${fyMargin.toFixed(1)}% margin</div></div>
+    <div class="stat"><div class="label">FY Gross Sales ${hi('Total revenue by order date across the full financial year. Matches Amazon Seller Central Sales Dashboard.')}</div><div class="value">${currSym()}${fmtK(fy.grossSales)}</div><div class="sub">${Math.round(fy.units)} units</div></div>
+    <div class="stat"><div class="label">FY Net Sales ${hi('Gross sales minus all promotional discounts plus shipping credits.')}</div><div class="value">${currSym()}${fmtK(fy.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
+    <div class="stat"><div class="label">Total Fees ${hi('All Amazon fees for the year: referral fees, FBA fees, storage, Easy Ship, and other transaction charges.')}</div><div class="value neg">${currSym()}${fmtK(Math.abs(fy.totalFees))}</div><div class="sub">${fy.grossSales ? (Math.abs(fy.totalFees)/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">FY Released ${hi('Total amount Amazon actually transferred to your bank account across the year. Cross-check with your Amazon payment statements.')}</div><div class="value ${fy.netReleased>=0?'':'neg'}">${currSym()}${fmtK(fy.netReleased)}</div><div class="sub">${fy.grossSales ? (fy.netReleased/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Total COGS ${hi('Total cost of all goods sold across the year.')}</div><div class="value neg">${currSym()}${fmtK(fy.totalCogs)}</div><div class="sub">${fy.grossSales ? (fy.totalCogs/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Total Ad Spend ${hi('Total Amazon advertising spend (SP + SB + SD) for the year, excluding 18% GST.')}</div><div class="value neg">${currSym()}${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">FY Net Contribution ${hi('Your actual profit for the year after all fees, COGS, and ad spend. Before income tax.')}</div><div class="value ${fy.netContrib >= 0 ? 'pos' : 'neg'}">${currSym()}${fmtK(fy.netContrib)}</div><div class="sub">${fyMargin.toFixed(1)}% margin</div></div>
   </div>`;
 
   // Month-over-month table
   const pct = (v, base) => base ? ` <span style="font-size:10px;color:var(--muted)">(${(Math.abs(v)/base*100).toFixed(1)}%)</span>` : '';
   html += `<div class="card"><h2>Month-over-Month Summary</h2>
   <div class="tbl-wrap"><table>
-    <thead><tr><th>Month</th><th class="r">Units</th><th class="r">Gross Sales (₹)</th><th class="r">Discount (₹)</th><th class="r">Amazon Fees (₹)</th><th class="r">Released (₹)</th><th class="r">COGS (₹)</th><th class="r">Ad Spend (₹)</th><th class="r">Net Contribution (₹)</th><th class="r">Margin %</th></tr></thead>
+    <thead><tr><th>Month</th><th class="r">Units</th><th class="r">Gross Sales (${currSym()})</th><th class="r">Discount (${currSym()})</th><th class="r">Amazon Fees (${currSym()})</th><th class="r">Released (${currSym()})</th><th class="r">COGS (${currSym()})</th><th class="r">Ad Spend (${currSym()})</th><th class="r">Net Contribution (${currSym()})</th><th class="r">Margin %</th></tr></thead>
     <tbody>`;
   for (const m of fyTotals) {
     html += `<tr>
       <td><strong>${m.my}</strong></td>
       <td class="r">${fmt1(m.units)}</td>
-      <td class="r">₹${fmt(m.grossSales)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(m.promoRebates))}${pct(m.promoRebates,m.grossSales)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(m.totalFees))}${pct(m.totalFees,m.grossSales)}</td>
-      <td class="r">₹${fmt(m.netReleased)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(m.totalCogs)}${pct(m.totalCogs,m.grossSales)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(m.adSpend)}${pct(m.adSpend,m.grossSales)}</td>
-      <td class="r" style="color:${m.netContrib >= 0 ? 'var(--pos)' : 'var(--neg)'};font-weight:700">₹${fmt(m.netContrib)}${pct(m.netContrib,m.grossSales)}</td>
+      <td class="r">${currSym()}${fmt(m.grossSales)}</td>
+      <td class="r" style="color:var(--neg)">${currSym()}${fmt(Math.abs(m.promoRebates))}${pct(m.promoRebates,m.grossSales)}</td>
+      <td class="r" style="color:var(--neg)">${currSym()}${fmt(Math.abs(m.totalFees))}${pct(m.totalFees,m.grossSales)}</td>
+      <td class="r">${currSym()}${fmt(m.netReleased)}</td>
+      <td class="r" style="color:var(--neg)">${currSym()}${fmt(m.totalCogs)}${pct(m.totalCogs,m.grossSales)}</td>
+      <td class="r" style="color:var(--neg)">${currSym()}${fmt(m.adSpend)}${pct(m.adSpend,m.grossSales)}</td>
+      <td class="r" style="color:${m.netContrib >= 0 ? 'var(--pos)' : 'var(--neg)'};font-weight:700">${currSym()}${fmt(m.netContrib)}${pct(m.netContrib,m.grossSales)}</td>
       <td class="r" style="color:${m.marginPct >= 0 ? 'var(--pos)' : 'var(--neg)'};font-weight:700">${m.marginPct.toFixed(1)}%</td>
     </tr>`;
   }
@@ -2708,13 +2746,13 @@ function renderFYPnL(div, viewMode, catFilter) {
   html += `<tr class="total-row">
     <td>FY TOTAL</td>
     <td class="r">${fmt1(fy.units)}</td>
-    <td class="r">₹${fmt(fy.grossSales)}</td>
+    <td class="r">${currSym()}${fmt(fy.grossSales)}</td>
     <td class="r">—</td>
-    <td class="r">₹${fmt(Math.abs(fy.totalFees))}${pct(fy.totalFees,fy.grossSales)}</td>
+    <td class="r">${currSym()}${fmt(Math.abs(fy.totalFees))}${pct(fy.totalFees,fy.grossSales)}</td>
     <td class="r">—</td>
-    <td class="r">₹${fmt(fy.totalCogs)}${pct(fy.totalCogs,fy.grossSales)}</td>
-    <td class="r">₹${fmt(fy.adSpend)}${pct(fy.adSpend,fy.grossSales)}</td>
-    <td class="r" style="color:${fy.netContrib >= 0 ? 'var(--pos)' : 'var(--neg)'}">₹${fmt(fy.netContrib)}</td>
+    <td class="r">${currSym()}${fmt(fy.totalCogs)}${pct(fy.totalCogs,fy.grossSales)}</td>
+    <td class="r">${currSym()}${fmt(fy.adSpend)}${pct(fy.adSpend,fy.grossSales)}</td>
+    <td class="r" style="color:${fy.netContrib >= 0 ? 'var(--pos)' : 'var(--neg)'}">${currSym()}${fmt(fy.netContrib)}</td>
     <td class="r" style="color:${fyMargin >= 0 ? 'var(--pos)' : 'var(--neg)'}">${fyMargin.toFixed(1)}%</td>
   </tr>`;
   html += '</tbody></table></div></div>';
@@ -2923,13 +2961,14 @@ async function syncToCloud() {
   let failed = 0;
 
   try {
-    await sbUpsert('config', S.config);
+    await sbUpsert(sbMktPrefix() + 'config', S.config);
 
     // MTR — slim rows, split by month, 150ms gap between upserts
+    const pfx = sbMktPrefix();
     const mtrByMonth = {};
     for (const r of S.raw.mtr) { const m = r._month||'unknown'; if (!mtrByMonth[m]) mtrByMonth[m]=[]; mtrByMonth[m].push(slimMTR(r)); }
     for (const [m, rows] of Object.entries(mtrByMonth)) {
-      const ok2 = await sbUpsertSafe(`mtr_${m}`, rows);
+      const ok2 = await sbUpsertSafe(`${pfx}mtr_${m}`, rows);
       if (!ok2) failed++;
       await delay(150);
     }
@@ -2938,7 +2977,7 @@ async function syncToCloud() {
     const payByMonth = {};
     for (const r of S.raw.payment) { const m = r._month||'unknown'; if (!payByMonth[m]) payByMonth[m]=[]; payByMonth[m].push(slimPay(r)); }
     for (const [m, rows] of Object.entries(payByMonth)) {
-      const ok2 = await sbUpsertSafe(`pay_${m}`, rows);
+      const ok2 = await sbUpsertSafe(`${pfx}pay_${m}`, rows);
       if (!ok2) failed++;
       await delay(150);
     }
@@ -2974,22 +3013,23 @@ async function syncFromCloud() {
   if (!ok) return;
   setSyncStatus('⬇ Loading…', 'var(--warn)');
   try {
-    const cfg = await sbGet('config');
+    const pfx = sbMktPrefix();
+    const cfg = await sbGet(pfx + 'config');
     if (cfg) {
       const sb = S.config.supabase;
       Object.assign(S.config, cfg);
       S.config.supabase = sb;
-      localStorage.setItem('girorganic_pnl_config', JSON.stringify(S.config));
+      localStorage.setItem(lsKey('girorganic_pnl_config'), JSON.stringify(S.config));
     }
 
-    // Pull TOTP secret — sync 2FA across devices
+    // Pull TOTP secret — sync 2FA across devices (shared, not per-marketplace)
     const totpSecret = await sbGet('totp_secret');
     if (totpSecret && typeof totpSecret === 'string') {
       localStorage.setItem('pnl_totp_secret', totpSecret);
     }
 
-    const allRows    = await sbFetch('pnl_store?key=like.mtr_%25&select=key,value');
-    const allPayRows = await sbFetch('pnl_store?key=like.pay_%25&select=key,value');
+    const allRows    = await sbFetch(`pnl_store?key=like.${pfx}mtr_%25&select=key,value`);
+    const allPayRows = await sbFetch(`pnl_store?key=like.${pfx}pay_%25&select=key,value`);
 
     if (Array.isArray(allRows) && allRows.length)    S.raw.mtr     = dedupMTR(allRows.flatMap(r => r.value || []));
     if (Array.isArray(allPayRows) && allPayRows.length) S.raw.payment = dedupPay(allPayRows.flatMap(r => r.value || []));
@@ -3142,9 +3182,9 @@ function renderAnalysis() {
     : fyMonths.filter(m => S.pnl[m]);
 
   const metricLabels = {
-    grossSales:'Gross Sales (₹)', units:'Units Sold', sellingFees:'Commission (₹)',
-    fbaFees:'FBA Fee (₹)', cogs:'COGS (₹)', discount:'Discount (₹)',
-    netContrib:'Net Contribution (₹)', margin:'Margin %'
+    grossSales:`Gross Sales (${currSym()})`, units:'Units Sold', sellingFees:`Commission (${currSym()})`,
+    fbaFees:`FBA Fee (${currSym()})`, cogs:`COGS (${currSym()})`, discount:`Discount (${currSym()})`,
+    netContrib:`Net Contribution (${currSym()})`, margin:'Margin %'
   };
   const isCurrency = !['units','margin'].includes(metric);
   const metricLabel = metricLabels[metric] + (perUnit && metric !== 'units' && metric !== 'margin' ? ' per unit' : '');
@@ -3240,7 +3280,7 @@ function renderAnalysis() {
             callbacks: {
               label: ctx => {
                 const v = ctx.parsed.y;
-                return ` ${ctx.dataset.label}: ${isCurrency ? '₹'+fmt(v) : metric==='margin' ? v.toFixed(1)+'%' : v.toLocaleString()}`;
+                return ` ${ctx.dataset.label}: ${isCurrency ? currSym()+fmt(v) : metric==='margin' ? v.toFixed(1)+'%' : v.toLocaleString()}`;
               }
             }
           }
@@ -3251,7 +3291,7 @@ function renderAnalysis() {
             stacked: stack && datasets.length > 1,
             ticks: {
               font: { size: 11 },
-              callback: v => isCurrency ? '₹'+fmtK(v) : metric==='margin' ? v.toFixed(0)+'%' : v.toLocaleString()
+              callback: v => isCurrency ? currSym()+fmtK(v) : metric==='margin' ? v.toFixed(0)+'%' : v.toLocaleString()
             },
             grid: { color: '#e0e0d8' }
           }
@@ -3278,13 +3318,13 @@ function renderAnalysis() {
   const totMargin = totals.grossSales ? netAfterAds/totals.grossSales*100 : 0;
 
   document.getElementById('anSummaryCards').innerHTML = `
-    <div class="stat"><div class="label">Gross Sales</div><div class="value">₹${fmtK(totals.grossSales)}</div><div class="sub">${totals.units.toLocaleString()} units</div></div>
-    <div class="stat"><div class="label">Discount</div><div class="value neg">₹${fmtK(totals.discount)}</div><div class="sub">${totals.grossSales?(totals.discount/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
-    <div class="stat"><div class="label">Commission</div><div class="value neg">₹${fmtK(totals.sellingFees)}</div><div class="sub">${totals.grossSales?(totals.sellingFees/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
-    <div class="stat"><div class="label">FBA Fee</div><div class="value neg">₹${fmtK(totals.fbaFees)}</div><div class="sub">${totals.grossSales?(totals.fbaFees/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
-    <div class="stat"><div class="label">COGS</div><div class="value neg">₹${fmtK(totals.cogs)}</div><div class="sub">${totals.grossSales?(totals.cogs/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
-    <div class="stat"><div class="label">Ad Spend${(cat||prod)?' <span style="font-size:9px;opacity:.7">(prorated)</span>':''}</div><div class="value neg">₹${fmtK(selAdSpend)}</div><div class="sub">${totals.grossSales?(selAdSpend/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
-    <div class="stat" style="border-color:var(--teal)"><div class="label">Net Contribution</div><div class="value ${netAfterAds>=0?'pos':'neg'}">₹${fmtK(netAfterAds)}</div><div class="sub">${totMargin.toFixed(1)}% margin</div></div>
+    <div class="stat"><div class="label">Gross Sales</div><div class="value">${currSym()}${fmtK(totals.grossSales)}</div><div class="sub">${totals.units.toLocaleString()} units</div></div>
+    <div class="stat"><div class="label">Discount</div><div class="value neg">${currSym()}${fmtK(totals.discount)}</div><div class="sub">${totals.grossSales?(totals.discount/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat"><div class="label">Commission</div><div class="value neg">${currSym()}${fmtK(totals.sellingFees)}</div><div class="sub">${totals.grossSales?(totals.sellingFees/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat"><div class="label">FBA Fee</div><div class="value neg">${currSym()}${fmtK(totals.fbaFees)}</div><div class="sub">${totals.grossSales?(totals.fbaFees/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat"><div class="label">COGS</div><div class="value neg">${currSym()}${fmtK(totals.cogs)}</div><div class="sub">${totals.grossSales?(totals.cogs/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat"><div class="label">Ad Spend${(cat||prod)?' <span style="font-size:9px;opacity:.7">(prorated)</span>':''}</div><div class="value neg">${currSym()}${fmtK(selAdSpend)}</div><div class="sub">${totals.grossSales?(selAdSpend/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat" style="border-color:var(--teal)"><div class="label">Net Contribution</div><div class="value ${netAfterAds>=0?'pos':'neg'}">${currSym()}${fmtK(netAfterAds)}</div><div class="sub">${totMargin.toFixed(1)}% margin</div></div>
   `;
 
   if (!products.length) {
@@ -3342,6 +3382,13 @@ function renderAll() {
 // INIT
 // ═══════════════════════════════════════════════════════════════════
 function init() {
+  // Restore marketplace selection
+  const savedMkt = localStorage.getItem('pnl_marketplace');
+  if (savedMkt && ['IN','COM','WEB'].includes(savedMkt)) {
+    S.marketplace = savedMkt;
+    const sel = document.getElementById('mktSelector');
+    if (sel) sel.value = savedMkt;
+  }
   loadConfig();
   if (!S.config.categories) S.config.categories = [];
   if (!S.config.productCategory) S.config.productCategory = {};
