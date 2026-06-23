@@ -1100,11 +1100,8 @@ initAuth();
         <option value="grossSales">Gross Sales (₹)</option>
         <option value="units">Units Sold</option>
         <option value="sellingFees">Commission / Referral Fee (₹)</option>
-        <option value="fbaFees">FBA Fulfilment Fee (₹)</option>
         <option value="cogs">COGS (₹)</option>
         <option value="discount">Discount / Promo Rebate (₹)</option>
-        <option value="netContrib">Net Contribution (₹)</option>
-        <option value="margin">Margin %</option>
       </select>
     </div>
     <div class="field">
@@ -1140,8 +1137,8 @@ initAuth();
   <!-- Summary cards -->
   <div id="anSummaryCards" class="stat-cards" style="margin-bottom:16px"></div>
 
-  <!-- Product breakdown table -->
-  <div id="anBreakdownTable"></div>
+  <!-- City/State breakdown -->
+  <div id="anGeoBreakdown"></div>
 </div>
 
 </main>
@@ -1354,6 +1351,8 @@ function normalizePayRow(row) {
     type: get('type','Type'),
     orderId: get('order id','Order Id','Order ID'),
     sku: get('Sku','SKU','sku'),
+    city: get('order city','Order City'),
+    state: get('order state','Order State'),
     qty: getNum('quantity','Quantity'),
     productSales: getNum('product sales'),
     shippingCredits: getNum('shipping credits'),
@@ -2507,6 +2506,16 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
   div.innerHTML = html;
 }
 
+function pnlFilterTable(q) {
+  const tbl = document.getElementById('pnlProdTable');
+  if (!tbl) return;
+  const s = q.toLowerCase().trim();
+  tbl.querySelectorAll('tbody tr').forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = !s || text.includes(s) ? '' : 'none';
+  });
+}
+
 function wfRow(label, value, base, type) {
   const pct = base ? (value/base*100).toFixed(1) : '—';
   const cls = type === 'subtotal' ? 'wf-row subtotal' : type === 'total' ? 'wf-row total' : `wf-row ${type}`;
@@ -2620,8 +2629,12 @@ function renderProductTable(data, grossSales, viewMode, my, catFilter) {
   body += subRow('GRAND TOTAL', tot, true);
 
   const title = catFilter ? `${catFilter} — ${my||'FY'}` : `All Products ${my ? '— '+my : '— FY'}`;
-  return `<div class="card"><h2>Product Breakdown — ${title}</h2>
-    <div class="tbl-wrap tbl-scroll"><table>${thead}<tbody>${body}</tbody></table></div></div>`;
+  return `<div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <h2 style="margin-bottom:0">Product Breakdown — ${title}</h2>
+      <input type="text" placeholder="🔍 Search product or category…" oninput="pnlFilterTable(this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;width:240px;outline:none" id="pnlSearchInput">
+    </div>
+    <div class="tbl-wrap tbl-scroll"><table id="pnlProdTable">${thead}<tbody>${body}</tbody></table></div></div>`;
 }
 
 function renderFYPnL(div, viewMode, catFilter) {
@@ -2669,6 +2682,7 @@ function renderFYPnL(div, viewMode, catFilter) {
   </div>`;
 
   // Month-over-month table
+  const pct = (v, base) => base ? ` <span style="font-size:10px;color:var(--muted)">(${(Math.abs(v)/base*100).toFixed(1)}%)</span>` : '';
   html += `<div class="card"><h2>Month-over-Month Summary</h2>
   <div class="tbl-wrap"><table>
     <thead><tr><th>Month</th><th class="r">Units</th><th class="r">Gross Sales (₹)</th><th class="r">Discount (₹)</th><th class="r">Amazon Fees (₹)</th><th class="r">Released (₹)</th><th class="r">COGS (₹)</th><th class="r">Ad Spend (₹)</th><th class="r">Net Contribution (₹)</th><th class="r">Margin %</th></tr></thead>
@@ -2678,12 +2692,12 @@ function renderFYPnL(div, viewMode, catFilter) {
       <td><strong>${m.my}</strong></td>
       <td class="r">${fmt1(m.units)}</td>
       <td class="r">₹${fmt(m.grossSales)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(m.promoRebates))}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(m.totalFees))}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(m.promoRebates))}${pct(m.promoRebates,m.grossSales)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(Math.abs(m.totalFees))}${pct(m.totalFees,m.grossSales)}</td>
       <td class="r">₹${fmt(m.netReleased)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(m.totalCogs)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(m.adSpend)}</td>
-      <td class="r" style="color:${m.netContrib >= 0 ? 'var(--pos)' : 'var(--neg)'};font-weight:700">₹${fmt(m.netContrib)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(m.totalCogs)}${pct(m.totalCogs,m.grossSales)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(m.adSpend)}${pct(m.adSpend,m.grossSales)}</td>
+      <td class="r" style="color:${m.netContrib >= 0 ? 'var(--pos)' : 'var(--neg)'};font-weight:700">₹${fmt(m.netContrib)}${pct(m.netContrib,m.grossSales)}</td>
       <td class="r" style="color:${m.marginPct >= 0 ? 'var(--pos)' : 'var(--neg)'};font-weight:700">${m.marginPct.toFixed(1)}%</td>
     </tr>`;
   }
@@ -2693,10 +2707,10 @@ function renderFYPnL(div, viewMode, catFilter) {
     <td class="r">${fmt1(fy.units)}</td>
     <td class="r">₹${fmt(fy.grossSales)}</td>
     <td class="r">—</td>
-    <td class="r">₹${fmt(Math.abs(fy.totalFees))}</td>
+    <td class="r">₹${fmt(Math.abs(fy.totalFees))}${pct(fy.totalFees,fy.grossSales)}</td>
     <td class="r">—</td>
-    <td class="r">₹${fmt(fy.totalCogs)}</td>
-    <td class="r">₹${fmt(fy.adSpend)}</td>
+    <td class="r">₹${fmt(fy.totalCogs)}${pct(fy.totalCogs,fy.grossSales)}</td>
+    <td class="r">₹${fmt(fy.adSpend)}${pct(fy.adSpend,fy.grossSales)}</td>
     <td class="r" style="color:${fy.netContrib >= 0 ? 'var(--pos)' : 'var(--neg)'}">₹${fmt(fy.netContrib)}</td>
     <td class="r" style="color:${fyMargin >= 0 ? 'var(--pos)' : 'var(--neg)'}">${fyMargin.toFixed(1)}%</td>
   </tr>`;
@@ -2859,7 +2873,7 @@ async function connectSupabase() {
 
 // Strip to essential fields only — cuts payload ~60%
 function slimMTR(r) { return { _month:r._month, orderId:r.orderId, txType:r.txType, sku:r.sku, qty:r.qty, itemPrice:r.itemPrice }; }
-function slimPay(r) { return { _month:r._month, orderId:r.orderId, type:r.type, sku:r.sku, qty:r.qty, productSales:r.productSales, shippingCredits:r.shippingCredits, promoRebates:r.promoRebates, sellingFees:r.sellingFees, fbaFees:r.fbaFees, otherTxnFees:r.otherTxnFees, total:r.total }; }
+function slimPay(r) { return { _month:r._month, orderId:r.orderId, type:r.type, sku:r.sku, city:r.city||'', state:r.state||'', qty:r.qty, productSales:r.productSales, shippingCredits:r.shippingCredits, promoRebates:r.promoRebates, sellingFees:r.sellingFees, fbaFees:r.fbaFees, otherTxnFees:r.otherTxnFees, total:r.total }; }
 
 async function sbUpsertSafe(key, value) {
   // Returns true on success, false on timeout/error — never throws
@@ -3245,68 +3259,44 @@ function renderAnalysis() {
   `;
 
   if (!products.length) {
-    document.getElementById('anBreakdownTable').innerHTML = '<div class="empty">No data for selected filters.</div>';
+    document.getElementById('anGeoBreakdown').innerHTML = '<div class="empty">No data for selected filters.</div>';
     return;
   }
 
-  // ── PRODUCT BREAKDOWN TABLE ──
-  const label = prod ? prod : cat ? `${cat}` : 'All Products';
-  const periodLabel = _anSelectedMonths.size > 0 ? `${_anSelectedMonths.size} month(s)` : `Full ${fy}`;
-  const rows = products.map(pn => {
-    const a = aggByProd[pn];
-    const totalFees = a.sellingFees + a.fbaFees + a.otherFees;
-    const margin = a.grossSales ? (a.netContrib-selAdSpend*adShare)/a.grossSales*100 : 0;
-    const productAdShare = totals.grossSales > 0 ? a.grossSales/totals.grossSales : 0;
-    const productAds = selAdSpend * productAdShare;
-    const netContribFinal = a.netContrib - productAds;
-    const marginFinal = a.grossSales ? netContribFinal/a.grossSales*100 : 0;
-    return { name:pn, ...a, totalFees, netContribFinal, marginFinal };
-  });
+  // ── CITY / STATE BREAKDOWN from raw payment data ──
+  const skusInSelection = new Set();
+  for (const pn of products) {
+    Object.entries(S.config.skuMap).forEach(([sku, name]) => { if (name === pn) skusInSelection.add(sku); });
+  }
+  const cityCount = {}, stateCount = {};
+  for (const row of S.raw.payment) {
+    if (row.type !== 'Order') continue;
+    if (!activeMonths.includes(row._month)) continue;
+    const dn = resolveProductName(row.sku);
+    const pc = resolveCategory(row.sku);
+    if (cat && pc !== cat) continue;
+    if (prod && dn !== prod) continue;
+    const c = (row.city||'').trim(); const s = (row.state||'').trim();
+    if (c) cityCount[c] = (cityCount[c]||0) + (row.qty||1);
+    if (s) stateCount[s] = (stateCount[s]||0) + (row.qty||1);
+  }
+  const topCities  = Object.entries(cityCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const topStates  = Object.entries(stateCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const totalUnits = topCities.reduce((s,[,v])=>s+v,0) || 1;
+  const totalSUnits= topStates.reduce((s,[,v])=>s+v,0) || 1;
 
-  const thead = `<thead><tr>
-    <th>Product</th><th>Category</th>
-    <th class="r">Units</th><th class="r">Gross Sales (₹)</th><th class="r">Discount (₹)</th>
-    <th class="r">Commission (₹)</th><th class="r">FBA Fee (₹)</th>
-    <th class="r">COGS (₹)</th><th class="r">Ad Spend (₹)</th>
-    <th class="r">Net Contribution (₹)</th><th class="r">Margin %</th>
-  </tr></thead>`;
+  const cityRows  = topCities.map(([c,u]) => `<tr><td>${c}</td><td class="r">${u}</td><td class="r" style="width:120px"><div style="background:#e0f0e8;border-radius:4px;overflow:hidden"><div style="background:var(--teal);height:8px;width:${(u/totalUnits*100).toFixed(0)}%"></div></div></td><td class="r" style="color:var(--muted);font-size:11px">${(u/totalUnits*100).toFixed(1)}%</td></tr>`).join('');
+  const stateRows = topStates.map(([s,u]) => `<tr><td>${s}</td><td class="r">${u}</td><td class="r" style="width:120px"><div style="background:#e0f0e8;border-radius:4px;overflow:hidden"><div style="background:var(--teal);height:8px;width:${(u/totalSUnits*100).toFixed(0)}%"></div></div></td><td class="r" style="color:var(--muted);font-size:11px">${(u/totalSUnits*100).toFixed(1)}%</td></tr>`).join('');
 
-  const tbody = rows.map(r => {
-    const productAdShare2 = totals.grossSales > 0 ? r.grossSales/totals.grossSales : 0;
-    const prodAds = selAdSpend * productAdShare2;
-    const nc = r.netContrib - prodAds;
-    const mg = r.grossSales ? nc/r.grossSales*100 : 0;
-    return `<tr>
-      <td>${r.name}</td>
-      <td><span class="badge ${r.category==='Combo'?'blue':r.category==='Discontinued'||r.category==='Uncategorized'?'grey':'green'}">${r.category}</span></td>
-      <td class="r">${Math.round(r.units).toLocaleString()}</td>
-      <td class="r">₹${fmt(r.grossSales)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(r.discount)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(r.sellingFees)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(r.fbaFees)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(r.cogs)}</td>
-      <td class="r" style="color:var(--neg)">₹${fmt(prodAds)}</td>
-      <td class="r" style="color:${nc>=0?'var(--pos)':'var(--neg)'}">₹${fmt(nc)}</td>
-      <td class="r" style="font-weight:600;color:${mg>=0?'var(--pos)':'var(--neg)'}">${mg.toFixed(1)}%</td>
-    </tr>`;
-  }).join('');
-
-  const tfoot = `<tfoot><tr class="total-row">
-    <td colspan="2">TOTAL — ${label} · ${periodLabel}</td>
-    <td class="r">${Math.round(totals.units).toLocaleString()}</td>
-    <td class="r">₹${fmt(totals.grossSales)}</td>
-    <td class="r">₹${fmt(totals.discount)}</td>
-    <td class="r">₹${fmt(totals.sellingFees)}</td>
-    <td class="r">₹${fmt(totals.fbaFees)}</td>
-    <td class="r">₹${fmt(totals.cogs)}</td>
-    <td class="r">₹${fmt(selAdSpend)}</td>
-    <td class="r" style="color:${netAfterAds>=0?'var(--pos)':'var(--neg)'}">₹${fmt(netAfterAds)}</td>
-    <td class="r" style="font-weight:700;color:${totMargin>=0?'var(--pos)':'var(--neg)'}">${totMargin.toFixed(1)}%</td>
-  </tr></tfoot>`;
-
-  document.getElementById('anBreakdownTable').innerHTML =
-    `<div class="card"><h2>Product Breakdown — ${label} — ${periodLabel}</h2>
-     <div class="tbl-wrap tbl-scroll"><table>${thead}<tbody>${tbody}</tbody>${tfoot}</table></div></div>`;
+  const geoNote = !topCities.length ? '<div class="alert info">City/State data available after re-uploading payment files (city/state fields added in latest update).</div>' : '';
+  document.getElementById('anGeoBreakdown').innerHTML = geoNote + `<div class="row">
+    <div class="col"><div class="card"><h2>📍 Top Cities by Units</h2>
+      ${topCities.length ? `<div class="tbl-wrap"><table><thead><tr><th>City</th><th class="r">Units</th><th class="r">Share</th><th class="r">%</th></tr></thead><tbody>${cityRows}</tbody></table></div>` : '<div class="empty">No city data — re-upload payment files.</div>'}
+    </div></div>
+    <div class="col"><div class="card"><h2>🗺 Top States by Units</h2>
+      ${topStates.length ? `<div class="tbl-wrap"><table><thead><tr><th>State</th><th class="r">Units</th><th class="r">Share</th><th class="r">%</th></tr></thead><tbody>${stateRows}</tbody></table></div>` : '<div class="empty">No state data — re-upload payment files.</div>'}
+    </div></div>
+  </div>`;
 }
 
 function renderAll() {
