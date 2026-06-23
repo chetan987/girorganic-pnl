@@ -3044,6 +3044,14 @@ function renderAnalysis() {
     }
   }
 
+  // Ad spend for selected months (prorated by product share if cat/prod filter active)
+  const totalAdSpend = activeMonths.reduce((s, m) => s + (S.config.adSpend[m] || 0), 0);
+  // Prorate ad spend if filtering by category/product
+  const allMonthsGross = activeMonths.reduce((s, m) => {
+    const data = S.pnl[m]; if (!data) return s;
+    return s + Object.values(data.products).reduce((ss, p) => ss + p.productSales, 0);
+  }, 0);
+
   const rows = Object.entries(agg).map(([name, a]) => {
     const totalFees = a.sellingFees + a.fbaFees + a.otherFees;
     const netContrib = a.released - a.cogs;
@@ -3058,7 +3066,14 @@ function renderAnalysis() {
     s.netContrib += r.netContrib;
     return s;
   }, { units:0, grossSales:0, discount:0, totalFees:0, released:0, cogs:0, netContrib:0 });
-  const totMargin = tot.grossSales ? tot.netContrib / tot.grossSales * 100 : 0;
+
+  // Prorate ad spend by this selection's share of total revenue
+  const adSpendShare = (cat || prod) && allMonthsGross > 0
+    ? tot.grossSales / allMonthsGross
+    : 1;
+  const selectionAdSpend = totalAdSpend * adSpendShare;
+  const netContribAfterAds = tot.netContrib - selectionAdSpend;
+  const totMargin = tot.grossSales ? netContribAfterAds / tot.grossSales * 100 : 0;
 
   const label = prod ? prod : cat ? `${cat} (all products)` : 'All Products';
   const periodLabel = _anSelectedMonths.size > 0
@@ -3072,7 +3087,8 @@ function renderAnalysis() {
     <div class="stat"><div class="label">Amazon Fees</div><div class="value neg">₹${fmtK(tot.totalFees)}</div><div class="sub">${tot.grossSales ? (tot.totalFees/tot.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Released</div><div class="value">₹${fmtK(tot.released)}</div><div class="sub">${tot.grossSales ? (tot.released/tot.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">COGS</div><div class="value neg">₹${fmtK(tot.cogs)}</div><div class="sub">${tot.grossSales ? (tot.cogs/tot.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Net Contribution</div><div class="value ${tot.netContrib>=0?'pos':'neg'}">₹${fmtK(tot.netContrib)}</div><div class="sub">${totMargin.toFixed(1)}% margin</div></div>
+    <div class="stat"><div class="label">Ad Spend ${(cat||prod)?'<span style="font-size:9px;opacity:.7">(prorated)</span>':''}</div><div class="value neg">₹${fmtK(selectionAdSpend)}</div><div class="sub">${tot.grossSales ? (selectionAdSpend/tot.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat" style="border-color:var(--teal)"><div class="label">Net Contribution</div><div class="value ${netContribAfterAds>=0?'pos':'neg'}">₹${fmtK(netContribAfterAds)}</div><div class="sub">${totMargin.toFixed(1)}% margin (after ads)</div></div>
   `;
 
   if (!rows.length) {
