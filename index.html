@@ -1156,17 +1156,17 @@ function clearRawData() {
 }
 
 // Merge new rows into existing, dedup by key fields
+function mtrKey(r) { return (r.orderId||'') + '|' + (r.sku||'') + '|' + (r._month||'') + '|' + (r.txType||''); }
+function payKey(r) { return (r.settlementId||'') + '|' + (r.orderId||'') + '|' + (r.sku||'') + '|' + (r.type||'') + '|' + (r.total||''); }
+
+function dedupMTR(rows) { const m = new Map(); for (const r of rows) m.set(mtrKey(r), r); return [...m.values()]; }
+function dedupPay(rows) { const m = new Map(); for (const r of rows) m.set(payKey(r), r); return [...m.values()]; }
+
 function mergeMTRRows(newRows) {
-  const existing = new Map();
-  for (const r of S.raw.mtr) existing.set(r.orderId + '|' + r.sku + '|' + r._month, r);
-  for (const r of newRows) existing.set(r.orderId + '|' + r.sku + '|' + r._month, r);
-  S.raw.mtr = [...existing.values()];
+  S.raw.mtr = dedupMTR([...S.raw.mtr, ...newRows]);
 }
 function mergePayRows(newRows) {
-  const existing = new Map();
-  for (const r of S.raw.payment) existing.set(r.dateStr + '|' + r.settlementId + '|' + r.orderId + '|' + r.sku + '|' + r.type, r);
-  for (const r of newRows) existing.set(r.dateStr + '|' + r.settlementId + '|' + r.orderId + '|' + r.sku + '|' + r.type, r);
-  S.raw.payment = [...existing.values()];
+  S.raw.payment = dedupPay([...S.raw.payment, ...newRows]);
 }
 function exportConfig() {
   const blob = new Blob([JSON.stringify(S.config, null, 2)], { type: 'application/json' });
@@ -2781,8 +2781,8 @@ async function syncFromCloud() {
     const allRows    = await sbFetch('pnl_store?key=like.mtr_%25&select=key,value');
     const allPayRows = await sbFetch('pnl_store?key=like.pay_%25&select=key,value');
 
-    if (Array.isArray(allRows) && allRows.length)    S.raw.mtr     = allRows.flatMap(r => r.value || []);
-    if (Array.isArray(allPayRows) && allPayRows.length) S.raw.payment = allPayRows.flatMap(r => r.value || []);
+    if (Array.isArray(allRows) && allRows.length)    S.raw.mtr     = dedupMTR(allRows.flatMap(r => r.value || []));
+    if (Array.isArray(allPayRows) && allPayRows.length) S.raw.payment = dedupPay(allPayRows.flatMap(r => r.value || []));
     saveRawData();
 
     const now = new Date().toLocaleString('en-IN');
