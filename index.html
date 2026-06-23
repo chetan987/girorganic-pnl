@@ -1214,7 +1214,11 @@ function onMarketplaceChange() {
   renderPnLTab();
   renderUploadTabLabels();
   const mktLabel = { IN: 'Amazon.in', COM: 'Amazon.com', WEB: 'Website' }[S.marketplace];
-  showAlert(`Switched to ${mktLabel}. Upload the relevant files for this platform.`, 'info');
+  showAlert(`Switched to ${mktLabel}. Pulling latest data from cloud…`, 'info');
+  // Pull fresh config + data from Supabase for the new marketplace
+  if (S.config.supabase?.url && S.config.supabase?.anonKey) {
+    syncFromCloud();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
