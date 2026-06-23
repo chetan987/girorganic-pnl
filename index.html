@@ -2157,12 +2157,22 @@ function buildPnL() {
   // Get set of unmatched order IDs from recon (to flag)
   const unmatchedIds = new Set((S.recon?.unmatched || []).map(r => r.orderId));
 
+  // Build orderId → order-date month from MTR (MTR._month is already set from order date)
+  const orderMonthMap = new Map();
+  for (const r of S.raw.mtr) {
+    if (r.orderId && r._month) orderMonthMap.set(r.orderId, r._month);
+  }
+
   // Types that carry product-level data (expand by SKU)
   const PRODUCT_TYPES = new Set(['Order','Refund','Adjustment','Reimbursements','Clawbacks','SAFE-T Reimbursement']);
 
   for (const row of S.raw.payment) {
-    if (!row._month || row.type === 'Transfer') continue;
-    const my = row._month;
+    if (row.type === 'Transfer') continue;
+    // Use ORDER DATE month (from MTR) for product rows; fall back to settlement date for fee rows
+    const my = (row.orderId && orderMonthMap.has(row.orderId))
+      ? orderMonthMap.get(row.orderId)
+      : row._month;
+    if (!my) continue;
     if (!byMonth[my]) byMonth[my] = { products: {}, storage: 0, mfnShipping: 0, otherAdj: 0, skuRaw: {} };
 
     if (row.type === 'FBA Inventory Fee') {
@@ -2311,10 +2321,11 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
   }
 
   let html = unmappedBanner + `<div class="stat-cards">
-    <div class="stat"><div class="label">Gross Sales ${hi('Total product sales value before any deductions. This is the MRP × units sold.')}</div><div class="value">₹${fmtK(t.grossSales)}</div><div class="sub">${Math.round(t.units)} units</div></div>
+    <div class="stat"><div class="label">Gross Sales ${hi('Total product sales by ORDER DATE — matches Amazon Seller Central Sales Dashboard. Orders placed this month regardless of when payment is settled.')}</div><div class="value">₹${fmtK(t.grossSales)}</div><div class="sub">${Math.round(t.units)} units</div></div>
     <div class="stat"><div class="label">Net Sales ${hi('Gross Sales minus promotional discounts, plus any shipping credits Amazon collected from the buyer.')}</div><div class="value">₹${fmtK(t.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
     <div class="stat"><div class="label">Discount ${hi('Promotional rebates — coupons, lightning deals, percentage-off promotions. Amazon deducts these from your payout.')}</div><div class="value neg">₹${fmtK(Math.abs(t.promoRebates))}</div><div class="sub">${t.grossSales ? (Math.abs(t.promoRebates)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Amazon Fees ${hi('Total of: Referral/closing fees + FBA fulfilment fees + storage fees + Easy Ship/MFN shipping fees + other transaction fees.')}</div><div class="value neg">₹${fmtK(Math.abs(t.totalFees))}</div><div class="sub">${t.grossSales ? (Math.abs(t.totalFees)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Released ${hi('Actual amount Amazon transferred to your bank account this month — after all fees, adjustments, and refunds. Cross-check with your Amazon payment statement.')}</div><div class="value ${t.netReleased >= 0 ? '' : 'neg'}">₹${fmtK(t.netReleased)}</div><div class="sub">${t.grossSales ? (t.netReleased/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">COGS ${hi('Cost of Goods Sold — your product manufacturing/purchase cost. Enter per-product rates in the COGS tab. Shows ₹0 if not entered.')}</div><div class="value neg">₹${fmtK(t.totalCogs)}</div><div class="sub">${t.grossSales ? (t.totalCogs/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Ad Spend ${hi('Total Amazon advertising spend (SP + SB + SD) for this month. Enter monthly totals in the Ad Spend section under COGS tab.')}</div><div class="value neg">₹${fmtK(adSpend)}</div><div class="sub">${t.grossSales ? (adSpend/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Net Contribution ${hi('Money left after Amazon releases payment, minus your COGS and ad spend. This is your actual profit before income tax.')}</div><div class="value ${t.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(t.netContrib)}</div><div class="sub">${t.marginPct.toFixed(1)}% margin</div></div>
@@ -2487,19 +2498,21 @@ function renderFYPnL(div, viewMode, catFilter) {
   });
 
   const fy = fyTotals.reduce((acc, m) => {
-    acc.grossSales += m.grossSales; acc.netSales += m.netSales; acc.netContrib += m.netContrib;
-    acc.totalCogs += m.totalCogs; acc.totalFees += m.totalFees; acc.adSpend += m.adSpend; acc.units += m.units;
+    acc.grossSales += m.grossSales; acc.netSales += m.netSales; acc.netReleased += m.netReleased;
+    acc.netContrib += m.netContrib; acc.totalCogs += m.totalCogs; acc.totalFees += m.totalFees;
+    acc.adSpend += m.adSpend; acc.units += m.units;
     return acc;
-  }, { grossSales:0, netSales:0, netContrib:0, totalCogs:0, totalFees:0, adSpend:0, units:0 });
+  }, { grossSales:0, netSales:0, netReleased:0, netContrib:0, totalCogs:0, totalFees:0, adSpend:0, units:0 });
   const fyMargin = fy.grossSales ? fy.netContrib/fy.grossSales*100 : 0;
 
   html += `<div class="stat-cards">
-    <div class="stat"><div class="label">FY Gross Sales ${hi('Total revenue across all months in this financial year before any deductions.')}</div><div class="value">₹${fmtK(fy.grossSales)}</div><div class="sub">${Math.round(fy.units)} units</div></div>
-    <div class="stat"><div class="label">FY Net Sales ${hi('Gross sales minus all promotional discounts plus shipping credits. This is what Amazon recognised as your revenue.')}</div><div class="value">₹${fmtK(fy.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
+    <div class="stat"><div class="label">FY Gross Sales ${hi('Total revenue by order date across the full financial year. Matches Amazon Seller Central Sales Dashboard.')}</div><div class="value">₹${fmtK(fy.grossSales)}</div><div class="sub">${Math.round(fy.units)} units</div></div>
+    <div class="stat"><div class="label">FY Net Sales ${hi('Gross sales minus all promotional discounts plus shipping credits.')}</div><div class="value">₹${fmtK(fy.netSales)}</div><div class="sub">after discount &amp; shipping</div></div>
     <div class="stat"><div class="label">Total Fees ${hi('All Amazon fees for the year: referral fees, FBA fees, storage, Easy Ship, and other transaction charges.')}</div><div class="value neg">₹${fmtK(Math.abs(fy.totalFees))}</div><div class="sub">${fy.grossSales ? (Math.abs(fy.totalFees)/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Total COGS ${hi('Total cost of all goods sold across the year. Enter product costs in the COGS tab to see accurate numbers here.')}</div><div class="value neg">₹${fmtK(fy.totalCogs)}</div><div class="sub">${fy.grossSales ? (fy.totalCogs/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Total Ad Spend ${hi('Total Amazon advertising spend for the year. Enter monthly ad spends in the Ad Spend section under COGS tab.')}</div><div class="value neg">₹${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">FY Net Contribution ${hi('Your actual profit for the year after all fees, COGS, and ad spend. This is before income tax and any other business expenses.')}</div><div class="value ${fy.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(fy.netContrib)}</div><div class="sub">${fyMargin.toFixed(1)}% margin</div></div>
+    <div class="stat"><div class="label">FY Released ${hi('Total amount Amazon actually transferred to your bank account across the year. Cross-check with your Amazon payment statements.')}</div><div class="value ${fy.netReleased>=0?'':'neg'}">₹${fmtK(fy.netReleased)}</div><div class="sub">${fy.grossSales ? (fy.netReleased/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Total COGS ${hi('Total cost of all goods sold across the year.')}</div><div class="value neg">₹${fmtK(fy.totalCogs)}</div><div class="sub">${fy.grossSales ? (fy.totalCogs/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Total Ad Spend ${hi('Total Amazon advertising spend for the year.')}</div><div class="value neg">₹${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">FY Net Contribution ${hi('Your actual profit for the year after all fees, COGS, and ad spend. Before income tax.')}</div><div class="value ${fy.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(fy.netContrib)}</div><div class="sub">${fyMargin.toFixed(1)}% margin</div></div>
   </div>`;
 
   // Month-over-month table
