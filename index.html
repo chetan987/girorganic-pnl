@@ -1062,36 +1062,85 @@ initAuth();
 
 <div class="tab-panel" id="tab-analysis">
   <div class="card" style="margin-bottom:14px">
-    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-      <div class="field" style="min-width:180px">
-        <label>Category</label>
-        <select id="anCat" onchange="anOnCatChange()" style="width:100%">
-          <option value="">All Categories</option>
-        </select>
+  <!-- Row 1: Filters -->
+  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+    <div class="field" style="min-width:170px">
+      <label>Category</label>
+      <select id="anCat" onchange="anOnCatChange()" style="width:100%">
+        <option value="">All Categories</option>
+      </select>
+    </div>
+    <div class="field" style="min-width:200px">
+      <label>Product</label>
+      <select id="anProd" onchange="renderAnalysis()" style="width:100%">
+        <option value="">All Products</option>
+      </select>
+    </div>
+    <div class="field" style="min-width:140px">
+      <label>Financial Year</label>
+      <select id="anFY" onchange="anOnFYChange()" style="width:100%">
+        <option value="FY2023-24">FY 2023-24</option>
+        <option value="FY2024-25">FY 2024-25</option>
+        <option value="FY2025-26" selected>FY 2025-26</option>
+        <option value="FY2026-27">FY 2026-27</option>
+      </select>
+    </div>
+    <div class="field" style="flex:2;min-width:280px">
+      <label>Months <span style="font-size:10px;color:var(--muted)">(blank = full FY)</span></label>
+      <div id="anMonthPills" style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0"></div>
+    </div>
+    <button class="btn secondary small" onclick="anClearMonths()">Clear</button>
+  </div>
+
+  <!-- Row 2: Chart controls -->
+  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+    <div class="field">
+      <label>Metric to plot</label>
+      <select id="anMetric" onchange="renderAnalysis()" style="min-width:200px">
+        <option value="grossSales">Gross Sales (₹)</option>
+        <option value="units">Units Sold</option>
+        <option value="sellingFees">Commission / Referral Fee (₹)</option>
+        <option value="fbaFees">FBA Fulfilment Fee (₹)</option>
+        <option value="cogs">COGS (₹)</option>
+        <option value="discount">Discount / Promo Rebate (₹)</option>
+        <option value="netContrib">Net Contribution (₹)</option>
+        <option value="margin">Margin %</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>View as</label>
+      <select id="anChartMode" onchange="renderAnalysis()" style="min-width:130px">
+        <option value="total">Total per month</option>
+        <option value="perunit">Per unit (avg)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Chart type</label>
+      <div style="display:flex;gap:6px">
+        <button id="anChartBar" class="btn small" onclick="anSetChart('bar')" title="Bar">▐▌</button>
+        <button id="anChartLine" class="btn small secondary" onclick="anSetChart('line')" title="Line">↗</button>
+        <button id="anChartArea" class="btn small secondary" onclick="anSetChart('area')" title="Area">◣</button>
       </div>
-      <div class="field" style="min-width:220px">
-        <label>Product</label>
-        <select id="anProd" onchange="renderAnalysis()" style="width:100%">
-          <option value="">All Products</option>
-        </select>
-      </div>
-      <div class="field" style="min-width:160px">
-        <label>Financial Year</label>
-        <select id="anFY" onchange="anOnFYChange()" style="width:100%">
-          <option value="FY2024-25">FY 2024-25</option>
-          <option value="FY2025-26" selected>FY 2025-26</option>
-          <option value="FY2026-27">FY 2026-27</option>
-        </select>
-      </div>
-      <div class="field" style="flex:2;min-width:280px">
-        <label>Months <span style="font-size:10px;color:var(--muted)">(leave blank = full FY)</span></label>
-        <div id="anMonthPills" style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 0"></div>
-      </div>
-      <button class="btn secondary small" onclick="anClearMonths()">Clear Months</button>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-end">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" id="anStackProducts" onchange="renderAnalysis()"> Stack by product (top 8)
+      </label>
     </div>
   </div>
 
+  <!-- Chart -->
+  <div class="card" style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 id="anChartTitle" style="margin-bottom:0">Analysis Chart</h2>
+    </div>
+    <div style="position:relative;height:320px"><canvas id="anChart"></canvas></div>
+  </div>
+
+  <!-- Summary cards -->
   <div id="anSummaryCards" class="stat-cards" style="margin-bottom:16px"></div>
+
+  <!-- Product breakdown table -->
   <div id="anBreakdownTable"></div>
 </div>
 
@@ -2998,137 +3047,260 @@ function anClearMonths() {
   renderAnalysis();
 }
 
+let _anChartType = 'bar';
+let _anChartInstance = null;
+
+function anSetChart(type) {
+  _anChartType = type;
+  ['bar','line','area'].forEach(t => {
+    const btn = document.getElementById('anChart'+t.charAt(0).toUpperCase()+t.slice(1));
+    if (btn) { btn.className = t === type ? 'btn small' : 'btn small secondary'; }
+  });
+  renderAnalysis();
+}
+
+function getMetricValue(p, metric, perUnit) {
+  const units = p.units || 1;
+  const vals = {
+    grossSales: p.productSales,
+    units: p.units,
+    sellingFees: Math.abs(p.sellingFees||0),
+    fbaFees: Math.abs(p.fbaFees||0),
+    cogs: p.cogs||0,
+    discount: Math.abs(p.promoRebates||0),
+    netContrib: (p.total||0) - (p.cogs||0),
+    margin: p.productSales ? (((p.total||0)-(p.cogs||0))/p.productSales*100) : 0,
+  };
+  const v = vals[metric] ?? 0;
+  return (perUnit && metric !== 'units' && metric !== 'margin') ? (units > 0 ? v/units : 0) : v;
+}
+
+const AN_COLORS = ['#0B3D3D','#2563eb','#e67e22','#1e7a4c','#c0392b','#7c3aed','#0891b2','#d97706'];
+
 function renderAnalysis() {
   if (!S.pnl) {
     document.getElementById('anSummaryCards').innerHTML = '<div class="empty">Calculate P&L first to see analysis.</div>';
     document.getElementById('anBreakdownTable').innerHTML = '';
+    const canvas = document.getElementById('anChart');
+    if (canvas) canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
     return;
   }
 
-  const fy = document.getElementById('anFY')?.value || 'FY2025-26';
-  const cat = document.getElementById('anCat')?.value || '';
-  const prod = document.getElementById('anProd')?.value || '';
-  const fyMonths = new Set(getFYMonths(fy));
+  const fy       = document.getElementById('anFY')?.value || 'FY2025-26';
+  const cat      = document.getElementById('anCat')?.value || '';
+  const prod     = document.getElementById('anProd')?.value || '';
+  const metric   = document.getElementById('anMetric')?.value || 'grossSales';
+  const mode     = document.getElementById('anChartMode')?.value || 'total';
+  const stack    = document.getElementById('anStackProducts')?.checked || false;
+  const perUnit  = mode === 'perunit';
+  const fyMonths = getFYMonths(fy);
   const activeMonths = _anSelectedMonths.size > 0
-    ? [..._anSelectedMonths].filter(m => fyMonths.has(m))
-    : [...fyMonths];
+    ? fyMonths.filter(m => _anSelectedMonths.has(m))
+    : fyMonths.filter(m => S.pnl[m]);
 
-  // Collect product rows from S.pnl across selected months
-  const agg = {}; // productName → accumulated metrics
+  const metricLabels = {
+    grossSales:'Gross Sales (₹)', units:'Units Sold', sellingFees:'Commission (₹)',
+    fbaFees:'FBA Fee (₹)', cogs:'COGS (₹)', discount:'Discount (₹)',
+    netContrib:'Net Contribution (₹)', margin:'Margin %'
+  };
+  const isCurrency = !['units','margin'].includes(metric);
+  const metricLabel = metricLabels[metric] + (perUnit && metric !== 'units' && metric !== 'margin' ? ' per unit' : '');
+
+  // Collect by product by month
+  const productSet = new Set();
+  const byProdMonth = {}; // prod → month → value
+  const aggByMonth  = {}; // month → totals
+  const aggByProd   = {}; // prod → totals
+
   for (const my of activeMonths) {
     const data = S.pnl[my];
     if (!data) continue;
-    const adSpend = S.config.adSpend[my] || 0;
+    aggByMonth[my] = { units:0, grossSales:0, discount:0, sellingFees:0, fbaFees:0, otherFees:0, released:0, cogs:0, netContrib:0 };
     for (const [name, p] of Object.entries(data.products)) {
-      const displayName = resolveProductName(name);
-      const prodCat = resolveCategory(name);
+      const dn = resolveProductName(name);
+      const pc = resolveCategory(name);
+      if (cat && pc !== cat) continue;
+      if (prod && dn !== prod) continue;
 
-      // Filter by category
-      if (cat && prodCat !== cat) continue;
-      // Filter by product
-      if (prod && displayName !== prod) continue;
+      productSet.add(dn);
+      if (!byProdMonth[dn]) byProdMonth[dn] = {};
+      byProdMonth[dn][my] = (byProdMonth[dn][my] || 0) + getMetricValue(p, metric, perUnit);
 
-      if (!agg[displayName]) {
-        agg[displayName] = { category: prodCat, units: 0, grossSales: 0, discount: 0, sellingFees: 0, fbaFees: 0, otherFees: 0, released: 0, cogs: 0, months: new Set() };
-      }
-      const a = agg[displayName];
-      a.units += p.units;
-      a.grossSales += p.productSales;
-      a.discount += Math.abs(p.promoRebates);
-      a.sellingFees += Math.abs(p.sellingFees);
-      a.fbaFees += Math.abs(p.fbaFees);
-      a.otherFees += Math.abs(p.otherTxnFees);
-      a.released += p.total;
-      a.cogs += p.cogs;
-      a.months.add(my);
+      if (!aggByProd[dn]) aggByProd[dn] = { category:pc, units:0, grossSales:0, discount:0, sellingFees:0, fbaFees:0, otherFees:0, released:0, cogs:0, netContrib:0 };
+      const a = aggByProd[dn];
+      a.units += p.units; a.grossSales += p.productSales;
+      a.discount += Math.abs(p.promoRebates); a.sellingFees += Math.abs(p.sellingFees);
+      a.fbaFees += Math.abs(p.fbaFees); a.otherFees += Math.abs(p.otherTxnFees||0);
+      a.released += p.total; a.cogs += p.cogs;
+      a.netContrib += (p.total - p.cogs);
+
+      const am = aggByMonth[my];
+      am.units += p.units; am.grossSales += p.productSales;
+      am.discount += Math.abs(p.promoRebates); am.sellingFees += Math.abs(p.sellingFees);
+      am.fbaFees += Math.abs(p.fbaFees); am.otherFees += Math.abs(p.otherTxnFees||0);
+      am.released += p.total; am.cogs += p.cogs;
+      am.netContrib += (p.total - p.cogs);
     }
   }
 
-  // Ad spend for selected months (prorated by product share if cat/prod filter active)
-  const totalAdSpend = activeMonths.reduce((s, m) => s + (S.config.adSpend[m] || 0), 0);
-  // Prorate ad spend if filtering by category/product
-  const allMonthsGross = activeMonths.reduce((s, m) => {
-    const data = S.pnl[m]; if (!data) return s;
-    return s + Object.values(data.products).reduce((ss, p) => ss + p.productSales, 0);
-  }, 0);
+  const products = [...productSet].sort((a,b) =>
+    (aggByProd[b]?.grossSales||0) - (aggByProd[a]?.grossSales||0)
+  );
+  const top8 = products.slice(0, 8);
+  const shortMonths = activeMonths.map(m => { const [mn,yr]=m.split('-'); return mn.substring(0,3)+' '+yr.slice(2); });
 
-  const rows = Object.entries(agg).map(([name, a]) => {
-    const totalFees = a.sellingFees + a.fbaFees + a.otherFees;
-    const netContrib = a.released - a.cogs;
-    const margin = a.grossSales ? netContrib / a.grossSales * 100 : 0;
-    return { name, ...a, totalFees, netContrib, margin };
-  }).sort((a,b) => b.grossSales - a.grossSales);
+  // ── CHART ──
+  if (_anChartInstance) { _anChartInstance.destroy(); _anChartInstance = null; }
+  const canvas = document.getElementById('anChart');
+  if (canvas) {
+    let datasets;
+    if (stack && products.length > 1) {
+      // Stacked: one dataset per product (top 8)
+      datasets = top8.map((pn, i) => ({
+        label: pn.length > 20 ? pn.substring(0,18)+'…' : pn,
+        data: activeMonths.map(m => byProdMonth[pn]?.[m] || 0),
+        backgroundColor: AN_COLORS[i % AN_COLORS.length] + ((_anChartType==='line'||_anChartType==='area')?'99':'cc'),
+        borderColor: AN_COLORS[i % AN_COLORS.length],
+        borderWidth: 2,
+        fill: _anChartType === 'area',
+        tension: 0.3,
+      }));
+    } else {
+      // Single dataset: total per month
+      const totalPerMonth = activeMonths.map(m => {
+        const am = aggByMonth[m];
+        if (!am) return 0;
+        if (metric === 'margin') return am.grossSales ? am.netContrib/am.grossSales*100 : 0;
+        const raw = {units:am.units,grossSales:am.grossSales,discount:am.discount,sellingFees:am.sellingFees,
+          fbaFees:am.fbaFees,cogs:am.cogs,netContrib:am.netContrib}[metric]??0;
+        return perUnit && metric!=='units' && metric!=='margin' ? (am.units>0?raw/am.units:0) : raw;
+      });
+      datasets = [{
+        label: metricLabel,
+        data: totalPerMonth,
+        backgroundColor: AN_COLORS[0] + 'cc',
+        borderColor: AN_COLORS[0],
+        borderWidth: 2,
+        fill: _anChartType === 'area',
+        tension: 0.3,
+      }];
+    }
 
-  // Totals
-  const tot = rows.reduce((s, r) => {
-    s.units += r.units; s.grossSales += r.grossSales; s.discount += r.discount;
-    s.totalFees += r.totalFees; s.released += r.released; s.cogs += r.cogs;
-    s.netContrib += r.netContrib;
+    _anChartInstance = new Chart(canvas.getContext('2d'), {
+      type: _anChartType === 'bar' ? 'bar' : 'line',
+      data: { labels: shortMonths, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: datasets.length > 1, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const v = ctx.parsed.y;
+                return ` ${ctx.dataset.label}: ${isCurrency ? '₹'+fmt(v) : metric==='margin' ? v.toFixed(1)+'%' : v.toLocaleString()}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { stacked: stack && datasets.length > 1, grid: { display: false }, ticks: { font: { size: 11 } } },
+          y: {
+            stacked: stack && datasets.length > 1,
+            ticks: {
+              font: { size: 11 },
+              callback: v => isCurrency ? '₹'+fmtK(v) : metric==='margin' ? v.toFixed(0)+'%' : v.toLocaleString()
+            },
+            grid: { color: '#e0e0d8' }
+          }
+        }
+      }
+    });
+    const titleEl = document.getElementById('anChartTitle');
+    if (titleEl) titleEl.textContent = metricLabel + (prod ? ` — ${prod}` : cat ? ` — ${cat}` : '') + ` · ${fy}`;
+  }
+
+  // ── SUMMARY CARDS ──
+  const totals = Object.values(aggByProd).reduce((s,a) => {
+    s.units+=a.units; s.grossSales+=a.grossSales; s.discount+=a.discount;
+    s.sellingFees+=a.sellingFees; s.fbaFees+=a.fbaFees; s.cogs+=a.cogs; s.netContrib+=a.netContrib;
     return s;
-  }, { units:0, grossSales:0, discount:0, totalFees:0, released:0, cogs:0, netContrib:0 });
+  }, {units:0,grossSales:0,discount:0,sellingFees:0,fbaFees:0,cogs:0,netContrib:0});
+  const totalAdSpend = activeMonths.reduce((s,m) => s+(S.config.adSpend[m]||0), 0);
+  const allGross = activeMonths.reduce((s,m) => {
+    const d=S.pnl[m]; return d ? s+Object.values(d.products).reduce((ss,p)=>ss+p.productSales,0) : s;
+  }, 0);
+  const adShare = (cat||prod) && allGross > 0 ? totals.grossSales/allGross : 1;
+  const selAdSpend = totalAdSpend * adShare;
+  const netAfterAds = totals.netContrib - selAdSpend;
+  const totMargin = totals.grossSales ? netAfterAds/totals.grossSales*100 : 0;
 
-  // Prorate ad spend by this selection's share of total revenue
-  const adSpendShare = (cat || prod) && allMonthsGross > 0
-    ? tot.grossSales / allMonthsGross
-    : 1;
-  const selectionAdSpend = totalAdSpend * adSpendShare;
-  const netContribAfterAds = tot.netContrib - selectionAdSpend;
-  const totMargin = tot.grossSales ? netContribAfterAds / tot.grossSales * 100 : 0;
-
-  const label = prod ? prod : cat ? `${cat} (all products)` : 'All Products';
-  const periodLabel = _anSelectedMonths.size > 0
-    ? `${_anSelectedMonths.size} month(s) selected`
-    : `Full ${fy}`;
-
-  // Stat cards
   document.getElementById('anSummaryCards').innerHTML = `
-    <div class="stat"><div class="label">Gross Sales</div><div class="value">₹${fmtK(tot.grossSales)}</div><div class="sub">${tot.units.toLocaleString()} units</div></div>
-    <div class="stat"><div class="label">Discount</div><div class="value neg">₹${fmtK(tot.discount)}</div><div class="sub">${tot.grossSales ? (tot.discount/tot.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Amazon Fees</div><div class="value neg">₹${fmtK(tot.totalFees)}</div><div class="sub">${tot.grossSales ? (tot.totalFees/tot.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Released</div><div class="value">₹${fmtK(tot.released)}</div><div class="sub">${tot.grossSales ? (tot.released/tot.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">COGS</div><div class="value neg">₹${fmtK(tot.cogs)}</div><div class="sub">${tot.grossSales ? (tot.cogs/tot.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Ad Spend ${(cat||prod)?'<span style="font-size:9px;opacity:.7">(prorated)</span>':''}</div><div class="value neg">₹${fmtK(selectionAdSpend)}</div><div class="sub">${tot.grossSales ? (selectionAdSpend/tot.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat" style="border-color:var(--teal)"><div class="label">Net Contribution</div><div class="value ${netContribAfterAds>=0?'pos':'neg'}">₹${fmtK(netContribAfterAds)}</div><div class="sub">${totMargin.toFixed(1)}% margin (after ads)</div></div>
+    <div class="stat"><div class="label">Gross Sales</div><div class="value">₹${fmtK(totals.grossSales)}</div><div class="sub">${totals.units.toLocaleString()} units</div></div>
+    <div class="stat"><div class="label">Discount</div><div class="value neg">₹${fmtK(totals.discount)}</div><div class="sub">${totals.grossSales?(totals.discount/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat"><div class="label">Commission</div><div class="value neg">₹${fmtK(totals.sellingFees)}</div><div class="sub">${totals.grossSales?(totals.sellingFees/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat"><div class="label">FBA Fee</div><div class="value neg">₹${fmtK(totals.fbaFees)}</div><div class="sub">${totals.grossSales?(totals.fbaFees/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat"><div class="label">COGS</div><div class="value neg">₹${fmtK(totals.cogs)}</div><div class="sub">${totals.grossSales?(totals.cogs/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat"><div class="label">Ad Spend${(cat||prod)?' <span style="font-size:9px;opacity:.7">(prorated)</span>':''}</div><div class="value neg">₹${fmtK(selAdSpend)}</div><div class="sub">${totals.grossSales?(selAdSpend/totals.grossSales*100).toFixed(1):0}% of sales</div></div>
+    <div class="stat" style="border-color:var(--teal)"><div class="label">Net Contribution</div><div class="value ${netAfterAds>=0?'pos':'neg'}">₹${fmtK(netAfterAds)}</div><div class="sub">${totMargin.toFixed(1)}% margin</div></div>
   `;
 
-  if (!rows.length) {
+  if (!products.length) {
     document.getElementById('anBreakdownTable').innerHTML = '<div class="empty">No data for selected filters.</div>';
     return;
   }
 
-  // Table
+  // ── PRODUCT BREAKDOWN TABLE ──
+  const label = prod ? prod : cat ? `${cat}` : 'All Products';
+  const periodLabel = _anSelectedMonths.size > 0 ? `${_anSelectedMonths.size} month(s)` : `Full ${fy}`;
+  const rows = products.map(pn => {
+    const a = aggByProd[pn];
+    const totalFees = a.sellingFees + a.fbaFees + a.otherFees;
+    const margin = a.grossSales ? (a.netContrib-selAdSpend*adShare)/a.grossSales*100 : 0;
+    const productAdShare = totals.grossSales > 0 ? a.grossSales/totals.grossSales : 0;
+    const productAds = selAdSpend * productAdShare;
+    const netContribFinal = a.netContrib - productAds;
+    const marginFinal = a.grossSales ? netContribFinal/a.grossSales*100 : 0;
+    return { name:pn, ...a, totalFees, netContribFinal, marginFinal };
+  });
+
   const thead = `<thead><tr>
     <th>Product</th><th>Category</th>
     <th class="r">Units</th><th class="r">Gross Sales (₹)</th><th class="r">Discount (₹)</th>
     <th class="r">Commission (₹)</th><th class="r">FBA Fee (₹)</th>
-    <th class="r">Released (₹)</th><th class="r">COGS (₹)</th>
+    <th class="r">COGS (₹)</th><th class="r">Ad Spend (₹)</th>
     <th class="r">Net Contribution (₹)</th><th class="r">Margin %</th>
   </tr></thead>`;
 
-  const tbody = rows.map(r => `<tr>
-    <td>${r.name}</td>
-    <td><span class="badge ${r.category==='Combo'?'blue':r.category==='Discontinued'?'grey':r.category==='Uncategorized'?'grey':'green'}">${r.category}</span></td>
-    <td class="r">${r.units.toLocaleString()}</td>
-    <td class="r">₹${fmt(r.grossSales)}</td>
-    <td class="r" style="color:var(--neg)">₹${fmt(r.discount)}</td>
-    <td class="r" style="color:var(--neg)">₹${fmt(r.sellingFees)}</td>
-    <td class="r" style="color:var(--neg)">₹${fmt(r.fbaFees)}</td>
-    <td class="r">₹${fmt(r.released)}</td>
-    <td class="r" style="color:var(--neg)">₹${fmt(r.cogs)}</td>
-    <td class="r" style="color:${r.netContrib>=0?'var(--pos)':'var(--neg)'}">₹${fmt(r.netContrib)}</td>
-    <td class="r" style="font-weight:600;color:${r.margin>=0?'var(--pos)':'var(--neg)'}">${r.margin.toFixed(1)}%</td>
-  </tr>`).join('');
+  const tbody = rows.map(r => {
+    const productAdShare2 = totals.grossSales > 0 ? r.grossSales/totals.grossSales : 0;
+    const prodAds = selAdSpend * productAdShare2;
+    const nc = r.netContrib - prodAds;
+    const mg = r.grossSales ? nc/r.grossSales*100 : 0;
+    return `<tr>
+      <td>${r.name}</td>
+      <td><span class="badge ${r.category==='Combo'?'blue':r.category==='Discontinued'||r.category==='Uncategorized'?'grey':'green'}">${r.category}</span></td>
+      <td class="r">${Math.round(r.units).toLocaleString()}</td>
+      <td class="r">₹${fmt(r.grossSales)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(r.discount)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(r.sellingFees)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(r.fbaFees)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(r.cogs)}</td>
+      <td class="r" style="color:var(--neg)">₹${fmt(prodAds)}</td>
+      <td class="r" style="color:${nc>=0?'var(--pos)':'var(--neg)'}">₹${fmt(nc)}</td>
+      <td class="r" style="font-weight:600;color:${mg>=0?'var(--pos)':'var(--neg)'}">${mg.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
 
   const tfoot = `<tfoot><tr class="total-row">
-    <td colspan="2"><strong>TOTAL — ${label} · ${periodLabel}</strong></td>
-    <td class="r">${tot.units.toLocaleString()}</td>
-    <td class="r">₹${fmt(tot.grossSales)}</td>
-    <td class="r">₹${fmt(tot.discount)}</td>
-    <td class="r">₹${fmt(tot.totalFees - rows.reduce((s,r)=>s+r.fbaFees,0))}</td>
-    <td class="r">₹${fmt(rows.reduce((s,r)=>s+r.fbaFees,0))}</td>
-    <td class="r">₹${fmt(tot.released)}</td>
-    <td class="r">₹${fmt(tot.cogs)}</td>
-    <td class="r" style="color:${tot.netContrib>=0?'var(--pos)':'var(--neg)'}">₹${fmt(tot.netContrib)}</td>
+    <td colspan="2">TOTAL — ${label} · ${periodLabel}</td>
+    <td class="r">${Math.round(totals.units).toLocaleString()}</td>
+    <td class="r">₹${fmt(totals.grossSales)}</td>
+    <td class="r">₹${fmt(totals.discount)}</td>
+    <td class="r">₹${fmt(totals.sellingFees)}</td>
+    <td class="r">₹${fmt(totals.fbaFees)}</td>
+    <td class="r">₹${fmt(totals.cogs)}</td>
+    <td class="r">₹${fmt(selAdSpend)}</td>
+    <td class="r" style="color:${netAfterAds>=0?'var(--pos)':'var(--neg)'}">₹${fmt(netAfterAds)}</td>
     <td class="r" style="font-weight:700;color:${totMargin>=0?'var(--pos)':'var(--neg)'}">${totMargin.toFixed(1)}%</td>
   </tr></tfoot>`;
 
