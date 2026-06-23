@@ -766,10 +766,20 @@ initAuth();
   </div>
 
   <div class="card">
-    <h2>Ad Spend (Monthly)</h2>
-    <p class="help" style="margin-bottom:12px;">Enter your total Amazon.in ad spend (SP + SB + SD) per month including GST. This is account-level and subtracted from P&L.</p>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+      <h2 style="margin-bottom:0">Ad Spend (Monthly)</h2>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--muted);font-weight:600">Financial Year:</span>
+        <select id="adSpendFY" onchange="renderAdSpendTable()" style="font-size:13px;padding:5px 8px;border:1px solid var(--border);border-radius:6px">
+          <option value="FY2023-24">FY 2023-24</option>
+          <option value="FY2024-25">FY 2024-25</option>
+          <option value="FY2025-26" selected>FY 2025-26</option>
+          <option value="FY2026-27">FY 2026-27</option>
+        </select>
+      </div>
+    </div>
+    <p class="help" style="margin-bottom:14px;">Enter total Amazon.in ad spend (SP + SB + SD) per month <strong>excluding GST</strong>. Values auto-save on every change.</p>
     <div id="adSpendTable"></div>
-    <button class="btn secondary small" style="margin-top:10px" onclick="addAdSpendRow()">+ Add Month</button>
   </div>
 
   <div class="card" style="background:#f0f7f0;border-color:#c3e0c8">
@@ -1331,6 +1341,10 @@ function handleMTRUpload(e) {
         updateHeaderStatus();
         fillReconMonthFilter();
         fillPnLMonthFilter();
+        autoSwitchFY(newRows.map(r => r._month));
+        runReconciliation();
+        buildPnL();
+        renderPnLTab();
       }
     };
     reader.readAsText(f);
@@ -1356,6 +1370,10 @@ function handlePayUpload(e) {
         updateHeaderStatus();
         fillReconMonthFilter();
         fillPnLMonthFilter();
+        autoSwitchFY(newRows.map(r => r._month));
+        runReconciliation();
+        buildPnL();
+        renderPnLTab();
       }
     };
     reader.readAsText(f);
@@ -1415,26 +1433,44 @@ function updateHeaderStatus() {
 // ═══════════════════════════════════════════════════════════════════
 function renderAdSpendTable() {
   const div = document.getElementById('adSpendTable');
-  const entries = Object.entries(S.config.adSpend).sort((a,b) => ORDERED_MY.indexOf(a[0]) - ORDERED_MY.indexOf(b[0]));
-  let html = '<div class="tbl-wrap"><table><thead><tr><th>Month</th><th class="r">Ad Spend incl. GST (₹)</th><th></th></tr></thead><tbody>';
-  for (const [my, amt] of entries) {
-    html += `<tr>
-      <td>${my}</td>
-      <td class="r"><input type="number" step="0.01" value="${amt}" onchange="S.config.adSpend['${my}']=parseFloat(this.value)||0;saveConfig()" style="width:140px;text-align:right"></td>
-      <td><button class="btn danger small" onclick="deleteAdSpend('${my}')">✕</button></td>
-    </tr>`;
-  }
-  html += '</tbody></table></div>';
-  div.innerHTML = html;
+  const fy = document.getElementById('adSpendFY')?.value || 'FY2025-26';
+  const months = getFYMonths(fy);
+  const total = months.reduce((s, m) => s + (S.config.adSpend[m] || 0), 0);
+
+  // 4-column grid (3 rows of 4 months = 12 months)
+  let cells = months.map(my => {
+    const amt = S.config.adSpend[my] || 0;
+    const [monthName, year] = my.split('-');
+    const shortMonth = monthName.substring(0, 3);
+    const hasVal = amt > 0;
+    return `<div style="background:${hasVal?'#f0f7f0':'#f9f9f7'};border:1px solid ${hasVal?'#c3e0c8':'var(--border)'};border-radius:10px;padding:12px 14px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${shortMonth} ${year}</div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="font-size:13px;color:var(--muted)">₹</span>
+        <input type="number" step="1" min="0" value="${amt||''}" placeholder="0"
+          style="width:100%;border:none;background:transparent;font-size:16px;font-weight:700;color:${hasVal?'var(--teal)':'var(--text)'};outline:none;padding:0"
+          onchange="saveAdSpend('${my}', this.value); this.closest('div[style]').style.background=this.value>0?'#f0f7f0':'#f9f9f7'; this.closest('div[style]').style.borderColor=this.value>0?'#c3e0c8':'var(--border)'; this.style.color=this.value>0?'var(--teal)':'var(--text)'"
+          oninput="this.onchange()">
+      </div>
+      ${hasVal ? `<div style="font-size:10px;color:var(--pos);margin-top:3px">₹${fmtK(amt)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  div.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+      ${cells}
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#eeeee6;border-radius:8px">
+      <span style="font-size:13px;font-weight:600;color:var(--teal)">FY Total Ad Spend</span>
+      <span style="font-size:18px;font-weight:700;color:var(--teal)">₹${fmt(total)}</span>
+    </div>`;
 }
 
-function addAdSpendRow() {
-  const my = prompt('Enter month (e.g. April-2025):');
-  if (!my) return;
-  if (!ORDERED_MY.includes(my)) { alert('Invalid month. Use format: April-2025'); return; }
-  S.config.adSpend[my] = S.config.adSpend[my] || 0;
+function saveAdSpend(my, val) {
+  const v = parseFloat(val) || 0;
+  if (v === 0) delete S.config.adSpend[my];
+  else S.config.adSpend[my] = v;
   saveConfig();
-  renderAdSpendTable();
 }
 
 function deleteAdSpend(my) {
@@ -2026,6 +2062,26 @@ function getSelectedFY() {
   return document.getElementById('fySelector')?.value || 'FY2025-26';
 }
 
+function autoSwitchFY(months) {
+  // Detect which FY the uploaded data belongs to and switch if different
+  const fyOptions = ['FY2024-25','FY2025-26','FY2026-27','FY2023-24'];
+  const validMonths = months.filter(Boolean);
+  if (!validMonths.length) return;
+  for (const fy of fyOptions) {
+    const fySet = new Set(getFYMonths(fy));
+    const overlap = validMonths.filter(m => fySet.has(m)).length;
+    if (overlap > validMonths.length * 0.5) { // majority belong to this FY
+      const sel = document.getElementById('fySelector');
+      if (sel && sel.value !== fy) {
+        sel.value = fy;
+        onFYChange();
+        showAlert(`Switched to ${fy} to match your uploaded data.`, 'info');
+      }
+      return;
+    }
+  }
+}
+
 function getFYMonths(fy) {
   // fy = "FY2025-26" → Apr-2025 … Mar-2026
   const match = fy.match(/FY(\d{4})-(\d{2})/);
@@ -2042,8 +2098,11 @@ function getFYMonths(fy) {
 function onFYChange() {
   fillReconMonthFilter();
   fillPnLMonthFilter();
-  // Update COGS year default to match FY start year
   const fy = getSelectedFY();
+  // Sync ad spend FY selector
+  const adSel = document.getElementById('adSpendFY');
+  if (adSel) { adSel.value = fy; renderAdSpendTable(); }
+  // Update COGS year default to match FY start year
   const m = fy.match(/FY(\d{4})/);
   if (m) {
     const ySel = document.getElementById('cogsYearSel');
@@ -2327,7 +2386,7 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
     <div class="stat"><div class="label">Amazon Fees ${hi('Total of: Referral/closing fees + FBA fulfilment fees + storage fees + Easy Ship/MFN shipping fees + other transaction fees.')}</div><div class="value neg">₹${fmtK(Math.abs(t.totalFees))}</div><div class="sub">${t.grossSales ? (Math.abs(t.totalFees)/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Released ${hi('Actual amount Amazon transferred to your bank account this month — after all fees, adjustments, and refunds. Cross-check with your Amazon payment statement.')}</div><div class="value ${t.netReleased >= 0 ? '' : 'neg'}">₹${fmtK(t.netReleased)}</div><div class="sub">${t.grossSales ? (t.netReleased/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">COGS ${hi('Cost of Goods Sold — your product manufacturing/purchase cost. Enter per-product rates in the COGS tab. Shows ₹0 if not entered.')}</div><div class="value neg">₹${fmtK(t.totalCogs)}</div><div class="sub">${t.grossSales ? (t.totalCogs/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Ad Spend ${hi('Total Amazon advertising spend (SP + SB + SD) for this month. Enter monthly totals in the Ad Spend section under COGS tab.')}</div><div class="value neg">₹${fmtK(adSpend)}</div><div class="sub">${t.grossSales ? (adSpend/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Ad Spend ${hi('Total Amazon advertising spend (SP + SB + SD) for this month, excluding 18% GST. Enter in the Ad Spend section under COGS tab.')}</div><div class="value neg">₹${fmtK(adSpend)}</div><div class="sub">${t.grossSales ? (adSpend/t.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Net Contribution ${hi('Money left after Amazon releases payment, minus your COGS and ad spend. This is your actual profit before income tax.')}</div><div class="value ${t.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(t.netContrib)}</div><div class="sub">${t.marginPct.toFixed(1)}% margin</div></div>
   </div>`;
 
@@ -2345,7 +2404,7 @@ function renderMonthPnL(div, my, viewMode, catFilter) {
       ${wfRow('Other Adjustments', t.otherAdj, t.grossSales, 'income')}
       ${wfRow('Net Released by Amazon', t.netReleased, t.grossSales, 'subtotal')}
       ${wfRow('COGS (Cost of Goods Sold)', -t.totalCogs, t.grossSales, 'cost')}
-      ${wfRow('Ad Spend (incl. GST)', -adSpend, t.grossSales, 'cost')}
+      ${wfRow('Ad Spend (excl. GST)', -adSpend, t.grossSales, 'cost')}
       <div class="wf-row total"><div class="wf-label">Net Contribution Margin</div><div class="wf-value">₹${fmt(t.netContrib)}</div><div class="wf-pct" style="color:#cfe">${t.marginPct.toFixed(1)}%</div></div>
     </div></div>`;
   }
@@ -2511,7 +2570,7 @@ function renderFYPnL(div, viewMode, catFilter) {
     <div class="stat"><div class="label">Total Fees ${hi('All Amazon fees for the year: referral fees, FBA fees, storage, Easy Ship, and other transaction charges.')}</div><div class="value neg">₹${fmtK(Math.abs(fy.totalFees))}</div><div class="sub">${fy.grossSales ? (Math.abs(fy.totalFees)/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">FY Released ${hi('Total amount Amazon actually transferred to your bank account across the year. Cross-check with your Amazon payment statements.')}</div><div class="value ${fy.netReleased>=0?'':'neg'}">₹${fmtK(fy.netReleased)}</div><div class="sub">${fy.grossSales ? (fy.netReleased/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">Total COGS ${hi('Total cost of all goods sold across the year.')}</div><div class="value neg">₹${fmtK(fy.totalCogs)}</div><div class="sub">${fy.grossSales ? (fy.totalCogs/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
-    <div class="stat"><div class="label">Total Ad Spend ${hi('Total Amazon advertising spend for the year.')}</div><div class="value neg">₹${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
+    <div class="stat"><div class="label">Total Ad Spend ${hi('Total Amazon advertising spend (SP + SB + SD) for the year, excluding 18% GST.')}</div><div class="value neg">₹${fmtK(fy.adSpend)}</div><div class="sub">${fy.grossSales ? (fy.adSpend/fy.grossSales*100).toFixed(1) : 0}% of sales</div></div>
     <div class="stat"><div class="label">FY Net Contribution ${hi('Your actual profit for the year after all fees, COGS, and ad spend. Before income tax.')}</div><div class="value ${fy.netContrib >= 0 ? 'pos' : 'neg'}">₹${fmtK(fy.netContrib)}</div><div class="sub">${fyMargin.toFixed(1)}% margin</div></div>
   </div>`;
 
