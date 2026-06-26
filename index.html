@@ -737,6 +737,7 @@ initAuth();
   <button class="tab" data-tab="pnl">📊 P&amp;L Report</button>
   <button class="tab" data-tab="calc">🧮 Margin Calculator</button>
   <button class="tab" data-tab="analysis">📈 Analysis</button>
+  <button class="tab" data-tab="daily">📋 Daily Report</button>
 </nav>
 
 <main>
@@ -1147,6 +1148,85 @@ initAuth();
 
   <!-- City/State breakdown -->
   <div id="anGeoBreakdown"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TAB: DAILY REPORT                                       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-daily">
+
+  <div class="row">
+    <div class="col" style="max-width:480px">
+      <div class="card">
+        <h2>Upload Daily Sales Report</h2>
+        <p class="help" style="margin-bottom:12px;">Export from Shopify: <strong>Analytics → Reports → Sales by product</strong>. Download CSV for today. Supports any CSV with product title, quantity, and sales columns.</p>
+        <div class="drop-zone" id="dailyDrop" onclick="document.getElementById('dailyInput').click()">
+          <div class="icon">🛍</div>
+          <p><strong>Click or drag Shopify daily CSV here</strong></p>
+          <p style="margin-top:4px;font-size:12px;">Accepts: .csv</p>
+          <input type="file" id="dailyInput" accept=".csv" onchange="handleDailyUpload(event)">
+        </div>
+        <div id="dailyUploadStatus" style="margin-top:10px;"></div>
+      </div>
+    </div>
+    <div class="col" style="max-width:340px">
+      <div class="card">
+        <h2>Report Settings</h2>
+        <div class="field" style="margin-bottom:12px">
+          <label>COGS Month</label>
+          <select id="dailyCogsMonth" style="width:100%" onchange="renderDailyReport()">
+            <option value="">— select month —</option>
+          </select>
+          <p class="help" style="margin-top:4px">Uses COGS rates you've entered for this month.</p>
+        </div>
+        <div class="field">
+          <label>Report Date</label>
+          <input type="date" id="dailyReportDate" style="width:100%" oninput="renderDailyReport()">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dailyReportSection" style="display:none">
+    <!-- Summary cards -->
+    <div id="dailyStatCards" class="stat-cards" style="margin-bottom:16px"></div>
+    <!-- Main table -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+        <h2 style="margin-bottom:0">Daily Sales Breakdown</h2>
+        <div id="dailyReportMeta" style="font-size:12px;color:var(--muted)"></div>
+      </div>
+      <div class="tbl-wrap">
+        <table id="dailyTable">
+          <thead>
+            <tr>
+              <th>Product / Variant</th>
+              <th class="r">Ordered</th>
+              <th class="r">Returned</th>
+              <th class="r">Net Qty</th>
+              <th class="r">Revenue (excl. tax)</th>
+              <th class="r">ASP</th>
+              <th class="r">COGS / Unit</th>
+              <th class="r">Total COGS</th>
+              <th class="r">Gross Profit</th>
+              <th class="r">Margin %</th>
+            </tr>
+          </thead>
+          <tbody id="dailyTableBody"></tbody>
+        </table>
+      </div>
+      <p id="dailyCogsMissing" class="help" style="margin-top:8px;color:var(--warn);display:none">
+        ⚠ Some products show COGS = 0. Go to the <strong>COGS tab</strong> → enter rates for those products, then re-select the COGS month above.
+      </p>
+    </div>
+  </div>
+
+  <div id="dailyEmpty" class="empty" style="padding:60px">
+    <div style="font-size:40px;margin-bottom:12px">📋</div>
+    <div style="font-weight:600;margin-bottom:6px">No daily report uploaded yet</div>
+    <div style="color:var(--muted);font-size:13px">Upload a Shopify "Sales by product" CSV above to see the daily breakdown.</div>
+  </div>
+
 </div>
 
 </main>
@@ -2968,6 +3048,7 @@ function switchTab(tabName, afterSwitch) {
   if (tabName === 'recon') renderReconTab();
   if (tabName === 'pnl') renderPnLTab();
   if (tabName === 'analysis') { anInit(); renderAnalysis(); }
+  if (tabName === 'daily') { populateDailyCogsMonth(); renderDailyReport(); }
   if (afterSwitch) setTimeout(afterSwitch, 50);
 }
 
@@ -3536,6 +3617,221 @@ function renderAnalysis() {
       ${topStates.length ? `<div class="tbl-wrap"><table><thead><tr><th>State</th><th class="r">Units</th><th class="r">Share</th><th class="r">%</th></tr></thead><tbody>${stateRows}</tbody></table></div>` : '<div class="empty">No state data — re-upload payment files.</div>'}
     </div></div>
   </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DAILY REPORT (Shopify)
+// ═══════════════════════════════════════════════════════════════════
+let _dailyRows = [];   // parsed rows for current session — not persisted
+
+function parseDailyCSV(text) {
+  const result = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false });
+  if (!result.data.length) return [];
+
+  const rawHeaders = Object.keys(result.data[0]);
+  const headers = rawHeaders.map(h => h.toLowerCase().trim());
+
+  const findCol = (...candidates) => {
+    for (const c of candidates) {
+      const h = headers.find(h => h === c || h.includes(c));
+      if (h) return rawHeaders[headers.indexOf(h)];
+    }
+    return null;
+  };
+
+  const titleCol   = findCol('product title', 'product name', 'lineitem name', 'title', 'product');
+  const variantCol = findCol('product variant title', 'variant title', 'variant', 'size');
+  const catCol     = findCol('category');
+  const qtyOrdCol  = findCol('quantity ordered', 'net quantity', 'quantity', 'qty', 'units');
+  const qtyRetCol  = findCol('quantity returned');
+  const salesCol   = findCol('total sales', 'net sales', 'gross sales', 'total', 'revenue', 'lineitem price', 'sale');
+  const taxCol     = findCol('taxes', 'tax');
+
+  if (!titleCol || !qtyOrdCol || !salesCol) return null;
+
+  const n = s => parseFloat((s || '0').toString().replace(/[$,]/g,'')) || 0;
+
+  const rows = [];
+  for (const r of result.data) {
+    const baseTitle = (r[titleCol] || '').trim();
+    if (!baseTitle) continue; // skip blank-title summary rows (e.g. shipping line)
+    const variant  = variantCol ? (r[variantCol] || '').trim() : '';
+    // Full display title = "Product - Variant" (used for COGS lookup too)
+    const title    = variant ? `${baseTitle} - ${variant}` : baseTitle;
+    const category = catCol ? (r[catCol] || '').trim() : '';
+    const qtyOrd   = n(r[qtyOrdCol]);
+    const qtyRet   = qtyRetCol ? Math.abs(n(r[qtyRetCol])) : 0; // stored as negative, normalise to positive
+    const netQty   = qtyOrd - qtyRet;
+    const totalSales = n(r[salesCol]);
+    const taxes      = taxCol ? n(r[taxCol]) : 0;
+    // Net revenue excl. tax
+    const revenue  = totalSales - taxes;
+    // Skip rows with zero net activity (no sales AND no returns)
+    if (qtyOrd === 0 && qtyRet === 0 && totalSales === 0) continue;
+    rows.push({ title, category, qtyOrd, qtyRet, netQty, revenue, taxes, totalSales });
+  }
+  return rows;
+}
+
+function dailyFindCogs(title, cogsMap) {
+  if (!cogsMap) return 0;
+  // 1. Exact match
+  if (cogsMap[title] !== undefined) return cogsMap[title];
+  const tl = title.toLowerCase();
+  // 2. Case-insensitive exact
+  for (const [k, v] of Object.entries(cogsMap)) {
+    if (k.toLowerCase() === tl) return v;
+  }
+  // 3. Partial: product name is contained in title or vice versa
+  let best = null, bestLen = 0;
+  for (const [k, v] of Object.entries(cogsMap)) {
+    const kl = k.toLowerCase();
+    if (tl.includes(kl) || kl.includes(tl)) {
+      if (k.length > bestLen) { best = v; bestLen = k.length; }
+    }
+  }
+  return best !== null ? best : 0;
+}
+
+function populateDailyCogsMonth() {
+  const sel = document.getElementById('dailyCogsMonth');
+  if (!sel) return;
+  const months = Object.keys(S.config.cogs || {}).sort((a,b) => ORDERED_MY.indexOf(a) - ORDERED_MY.indexOf(b));
+  // Also include current month even if no COGS set yet
+  const cur = monthYear(new Date());
+  if (!months.includes(cur)) months.push(cur);
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— select month —</option>' +
+    months.map(m => `<option value="${m}" ${m===prev?'selected':''}>${monthYearLabel(m)}</option>`).join('');
+  // Auto-select current month if nothing chosen
+  if (!sel.value) {
+    const match = months.find(m => m === cur) || months[months.length-1];
+    if (match) sel.value = match;
+  }
+}
+
+function handleDailyUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const parsed = parseDailyCSV(ev.target.result);
+    if (parsed === null) {
+      document.getElementById('dailyUploadStatus').innerHTML =
+        `<div class="alert error">❌ Could not detect columns. CSV needs "Product title", "Quantity", and "Sales" columns.</div>`;
+      return;
+    }
+    if (!parsed.length) {
+      document.getElementById('dailyUploadStatus').innerHTML =
+        `<div class="alert warn">⚠ No rows with sales found in this file.</div>`;
+      return;
+    }
+    _dailyRows = parsed;
+    document.getElementById('dailyUploadStatus').innerHTML =
+      `<div class="alert success">✅ Loaded <strong>${parsed.length}</strong> product rows from <strong>${file.name}</strong></div>`;
+    // Set report date to today if not set
+    const dateEl = document.getElementById('dailyReportDate');
+    if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().split('T')[0];
+    populateDailyCogsMonth();
+    renderDailyReport();
+  };
+  reader.readAsText(file);
+}
+
+function renderDailyReport() {
+  const empty   = document.getElementById('dailyEmpty');
+  const section = document.getElementById('dailyReportSection');
+
+  if (!_dailyRows.length) {
+    empty.style.display = ''; section.style.display = 'none'; return;
+  }
+  empty.style.display = 'none'; section.style.display = '';
+
+  const cogsMonth  = document.getElementById('dailyCogsMonth')?.value || '';
+  const cogsMap    = cogsMonth ? (S.config.cogs?.[cogsMonth] || {}) : {};
+  const reportDate = document.getElementById('dailyReportDate')?.value || '';
+  const sym = currSym();
+
+  // Build computed rows
+  let totalOrd = 0, totalRet = 0, totalNet = 0;
+  let totalRevenue = 0, totalTaxes = 0, totalCogs = 0;
+  let anyCogsMissing = false;
+
+  const rows = _dailyRows.map(r => {
+    const cogsUnit    = dailyFindCogs(r.title, cogsMap);
+    const totalCogsRow = cogsUnit * Math.max(r.netQty, 0); // COGS only on net sold units
+    const grossProfit  = r.revenue - totalCogsRow;
+    const marginPct    = r.revenue !== 0 ? (grossProfit / r.revenue * 100) : 0;
+    const asp          = r.netQty > 0 ? r.revenue / r.netQty : 0;
+    if (cogsUnit === 0 && r.netQty > 0) anyCogsMissing = true;
+    totalOrd     += r.qtyOrd;
+    totalRet     += r.qtyRet;
+    totalNet     += r.netQty;
+    totalRevenue += r.revenue;
+    totalTaxes   += r.taxes;
+    totalCogs    += totalCogsRow;
+    return { ...r, cogsUnit, totalCogsRow, grossProfit, marginPct, asp };
+  });
+
+  const totalGrossProfit = totalRevenue - totalCogs;
+  const totalMarginPct   = totalRevenue !== 0 ? (totalGrossProfit / totalRevenue * 100) : 0;
+  const overallASP       = totalNet > 0 ? totalRevenue / totalNet : 0;
+
+  // Stat cards
+  document.getElementById('dailyStatCards').innerHTML = `
+    <div class="stat"><div class="label">Net Revenue (excl. tax)</div><div class="value">${sym}${fmt(totalRevenue)}</div><div class="sub">${totalNet} net units sold</div></div>
+    <div class="stat"><div class="label">Tax Collected</div><div class="value">${sym}${fmt(totalTaxes)}</div><div class="sub">not your income</div></div>
+    <div class="stat"><div class="label">Total COGS</div><div class="value neg">${sym}${fmt(totalCogs)}</div><div class="sub">${totalRevenue>0?(totalCogs/totalRevenue*100).toFixed(1):0}% of revenue</div></div>
+    <div class="stat"><div class="label">Gross Profit</div><div class="value ${totalGrossProfit>=0?'pos':'neg'}">${sym}${fmt(totalGrossProfit)}</div><div class="sub">${totalMarginPct.toFixed(1)}% margin</div></div>
+    <div class="stat"><div class="label">Avg Selling Price</div><div class="value">${sym}${fmt(overallASP)}</div><div class="sub">excl. tax / net unit</div></div>
+    <div class="stat"><div class="label">Returns</div><div class="value ${totalRet>0?'warn':''}">${totalRet}</div><div class="sub">of ${totalOrd} ordered</div></div>`;
+
+  // Meta
+  if (document.getElementById('dailyReportMeta'))
+    document.getElementById('dailyReportMeta').textContent =
+      (reportDate ? `Report: ${reportDate}` : '') +
+      (cogsMonth  ? `  ·  COGS month: ${monthYearLabel(cogsMonth)}` : '');
+
+  // Table body
+  let tbody = '';
+  for (const r of rows) {
+    const noCogsFlag = r.cogsUnit === 0 && r.netQty > 0;
+    const cogsStyle  = noCogsFlag ? 'color:var(--warn)' : '';
+    const retCell    = r.qtyRet > 0
+      ? `<span style="color:var(--neg)">−${r.qtyRet}</span>`
+      : '—';
+    tbody += `<tr>
+      <td>
+        <div style="font-weight:600;font-size:13px">${r.title.split(' - ')[0]}</div>
+        ${r.title.includes(' - ') ? `<div style="font-size:11px;color:var(--muted)">${r.title.split(' - ').slice(1).join(' - ')}</div>` : ''}
+      </td>
+      <td class="r">${r.qtyOrd}</td>
+      <td class="r">${retCell}</td>
+      <td class="r"><strong>${r.netQty}</strong></td>
+      <td class="r">${sym}${fmt(r.revenue)}</td>
+      <td class="r">${sym}${fmt(r.asp)}</td>
+      <td class="r" style="${cogsStyle}">${noCogsFlag ? `<span title="Not set in COGS tab">⚠ —</span>` : sym+fmt(r.cogsUnit)}</td>
+      <td class="r" style="${cogsStyle}">${sym}${fmt(r.totalCogsRow)}</td>
+      <td class="r" style="color:${r.grossProfit>=0?'var(--pos)':'var(--neg)'}"><strong>${sym}${fmt(r.grossProfit)}</strong></td>
+      <td class="r" style="color:${r.marginPct>=0?'var(--pos)':'var(--neg)'}">${r.marginPct.toFixed(1)}%</td>
+    </tr>`;
+  }
+  // Totals row
+  tbody += `<tr class="total-row">
+    <td><strong>TOTAL</strong></td>
+    <td class="r"><strong>${totalOrd}</strong></td>
+    <td class="r"><strong style="color:var(--neg)">${totalRet>0?'−'+totalRet:'—'}</strong></td>
+    <td class="r"><strong>${totalNet}</strong></td>
+    <td class="r"><strong>${sym}${fmt(totalRevenue)}</strong></td>
+    <td class="r"><strong>${sym}${fmt(overallASP)}</strong></td>
+    <td class="r">—</td>
+    <td class="r"><strong>${sym}${fmt(totalCogs)}</strong></td>
+    <td class="r" style="color:${totalGrossProfit>=0?'var(--pos)':'var(--neg)'}"><strong>${sym}${fmt(totalGrossProfit)}</strong></td>
+    <td class="r" style="color:${totalMarginPct>=0?'var(--pos)':'var(--neg)'}"><strong>${totalMarginPct.toFixed(1)}%</strong></td>
+  </tr>`;
+
+  document.getElementById('dailyTableBody').innerHTML = tbody;
+  document.getElementById('dailyCogsMissing').style.display = anyCogsMissing ? '' : 'none';
 }
 
 function renderAll() {
