@@ -1278,12 +1278,8 @@ function onMarketplaceChange() {
   S.raw.payment = [];
   S.pnl = null;
   S.recon = null;
-  // Reset config to defaults, then load for new marketplace
-  S.config = {
-    categories: [], skuMap: {}, productCategory: {}, combos: {}, cogs: {}, adSpend: {},
-    supabase: S.config.supabase,
-  };
-  loadConfig();
+  // Shared config (COGS, SKU map, categories, combos) stays intact — only swap ad spend
+  loadAdSpend();
   loadRawData();
   buildPnL();
   renderAll();
@@ -1303,21 +1299,60 @@ function onMarketplaceChange() {
 
 // ═══════════════════════════════════════════════════════════════════
 // STORAGE
+// COGS, SKU map, categories, combos → SHARED across all marketplaces
+// adSpend → PER-MARKETPLACE (Amazon.in SP/SB/SD ≠ Amazon.com ads)
 // ═══════════════════════════════════════════════════════════════════
 let _syncTimer = null;
+
+function sharedConfigPayload() {
+  // Everything except adSpend and supabase credentials
+  return {
+    categories: S.config.categories,
+    skuMap: S.config.skuMap,
+    productCategory: S.config.productCategory,
+    combos: S.config.combos,
+    cogs: S.config.cogs,
+  };
+}
+
 function saveConfig() {
-  localStorage.setItem(lsKey('girorganic_pnl_config'), JSON.stringify(S.config));
+  // Shared config — no marketplace prefix (same for IN, COM, WEB)
+  localStorage.setItem('girorganic_pnl_config', JSON.stringify(sharedConfigPayload()));
+  // Per-marketplace ad spend
+  localStorage.setItem('girorganic_pnl_adspend' + mktSuffix(), JSON.stringify(S.config.adSpend || {}));
+
   if (S.config.supabase?.url && S.config.supabase?.anonKey) {
-    sbUpsert(sbMktPrefix() + 'config', S.config).catch(() => {});
+    // Shared config → single Supabase key 'config'
+    sbUpsert('config', sharedConfigPayload()).catch(() => {});
+    // Ad spend → per-marketplace key e.g. 'adspend', 'com_adspend', 'web_adspend'
+    sbUpsert(sbMktPrefix() + 'adspend', S.config.adSpend || {}).catch(() => {});
     clearTimeout(_syncTimer);
     _syncTimer = setTimeout(() => syncToCloud(), 2000);
   }
 }
+
 function loadConfig() {
   try {
-    const saved = localStorage.getItem(lsKey('girorganic_pnl_config'));
-    if (saved) Object.assign(S.config, JSON.parse(saved));
+    // Load shared config (no prefix)
+    const shared = localStorage.getItem('girorganic_pnl_config');
+    if (shared) {
+      const parsed = JSON.parse(shared);
+      // Only overwrite the shared fields, leave adSpend and supabase intact
+      if (parsed.categories !== undefined) S.config.categories = parsed.categories;
+      if (parsed.skuMap !== undefined) S.config.skuMap = parsed.skuMap;
+      if (parsed.productCategory !== undefined) S.config.productCategory = parsed.productCategory;
+      if (parsed.combos !== undefined) S.config.combos = parsed.combos;
+      if (parsed.cogs !== undefined) S.config.cogs = parsed.cogs;
+    }
   } catch(e) {}
+  loadAdSpend();
+}
+
+function loadAdSpend() {
+  try {
+    const saved = localStorage.getItem('girorganic_pnl_adspend' + mktSuffix());
+    S.config.adSpend = saved ? JSON.parse(saved) : {};
+  } catch(e) { S.config.adSpend = {}; }
 }
 
 // ── Raw data persistence (by month, so new months append cleanly) ──
@@ -3157,7 +3192,10 @@ async function syncToCloud() {
   let failed = 0;
 
   try {
-    await sbUpsert(sbMktPrefix() + 'config', S.config);
+    // Shared config — always key 'config', no marketplace prefix
+    await sbUpsert('config', sharedConfigPayload());
+    // Per-marketplace ad spend
+    await sbUpsert(sbMktPrefix() + 'adspend', S.config.adSpend || {});
 
     // MTR — slim rows, split by month, 150ms gap between upserts
     const pfx = sbMktPrefix();
@@ -3233,12 +3271,21 @@ async function syncFromCloud() {
 
   try {
     const pfx = sbMktPrefix();
-    const cfg = await fetchWithRetry(() => sbGet(pfx + 'config'), 'config');
+    // Shared config — always key 'config' regardless of marketplace
+    const cfg = await fetchWithRetry(() => sbGet('config'), 'config');
     if (cfg) {
-      const sb = S.config.supabase;
-      Object.assign(S.config, cfg);
-      S.config.supabase = sb;
-      localStorage.setItem(lsKey('girorganic_pnl_config'), JSON.stringify(S.config));
+      if (cfg.categories !== undefined) S.config.categories = cfg.categories;
+      if (cfg.skuMap !== undefined) S.config.skuMap = cfg.skuMap;
+      if (cfg.productCategory !== undefined) S.config.productCategory = cfg.productCategory;
+      if (cfg.combos !== undefined) S.config.combos = cfg.combos;
+      if (cfg.cogs !== undefined) S.config.cogs = cfg.cogs;
+      localStorage.setItem('girorganic_pnl_config', JSON.stringify(sharedConfigPayload()));
+    }
+    // Per-marketplace ad spend
+    const adSpend = await sbGet(pfx + 'adspend');
+    if (adSpend && typeof adSpend === 'object') {
+      S.config.adSpend = adSpend;
+      localStorage.setItem('girorganic_pnl_adspend' + mktSuffix(), JSON.stringify(adSpend));
     }
 
     // TOTP shared across marketplaces
