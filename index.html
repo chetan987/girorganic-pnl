@@ -554,13 +554,24 @@ async function initAuth() {
   const resetToken = urlParams.get('reset');
   if (resetToken) { await handleEmailResetToken(resetToken); return; }
 
+  // Show login form immediately — don't block UI waiting for Supabase
+  showPhase('p1');
+
+  // Load users in background, show spinner hint
+  const loadingHint = document.createElement('div');
+  loadingHint.id = 'authLoadingHint';
+  loadingHint.style.cssText = 'text-align:center;color:#a0b8b8;font-size:12px;margin-top:8px';
+  loadingHint.textContent = 'Connecting to server…';
+  document.getElementById('authP1')?.appendChild(loadingHint);
+
   await loadAuthUsers();
+
+  const hint = document.getElementById('authLoadingHint');
+  if (hint) hint.remove();
 
   if (!_authUsers.length) {
     showPhase('p0'); // first-time setup
-    return;
   }
-  showPhase('p1');
 }
 
 async function doFirstTimeSetup() {
